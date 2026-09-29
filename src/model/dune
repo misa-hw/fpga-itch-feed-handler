@@ -1,0 +1,4 @@
+(library
+ (name itch_model)
+ (libraries core)
+ (preprocess (pps ppx_jane)))

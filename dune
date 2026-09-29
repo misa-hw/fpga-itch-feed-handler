@@ -1,0 +1,4 @@
+; Test suites live in tests/<suite>/ with their own dune-project (see Makefile):
+; ppx_expect in this Hardcaml preview crashes when promoting output for tests
+; nested inside a larger dune project, so they are built with --root.
+(dirs src bin)
