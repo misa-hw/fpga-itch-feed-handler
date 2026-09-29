@@ -153,6 +153,8 @@ let create ?(mii_mode = false) ?(bit_cycles = 434) ?(second = 50_000_000) ?(phy_
   let wait_timer = Variable.reg s50 ~width:17 in
   let ack_seen = Variable.reg s50 ~width:1 in
   let status_due = Variable.reg s50 ~width:1 in
+  (* A snapshot acknowledgement proves that RX_CLK is running. The PHY can
+     free-run RX_CLK while the cable is unplugged, so this is a clock flag. *)
   let link = Variable.reg s50 ~width:1 in
   let ack_prev = Variable.reg s50 ~width:1 in
   let latched = List.map snap ~f:(fun (name, s) -> name, Variable.reg s50 ~width:(Signal.width s), s) in

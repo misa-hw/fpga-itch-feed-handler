@@ -1,0 +1,17 @@
+openXC7 timing and resource results (XC7A100T-FGG676-1)
+
+Core receive pipeline: fpga/timing.sh, eight-level top cache
+  Constraint: 125 MHz
+  Placed Fmax: 109.90 MHz
+  Routed Fmax: 93.36 MHz (FAIL)
+  Critical path: 10.71 ns to level-bank BRAM data input
+                 3.00 ns logic, 7.71 ns routing
+  Yosys: 13,023 estimated logic cells, 67 RAMB36E1, 62 RAMB18E1
+
+100 Mb/s board build: TARGET_MHZ=50 fpga/build_board.sh
+  Receive constraint: 25 MHz (MII nibbles)
+  UART/control constraint: 50 MHz
+  Placed Fmax: 122.10 MHz receive, 143.93 MHz UART/control (PASS)
+  Yosys: 15,125 estimated logic cells, 67 RAMB36E1, 62 RAMB18E1
+  Routed Fmax: 89.61 MHz receive (PASS at 25 MHz)
+               120.39 MHz UART/control (PASS at 50 MHz)

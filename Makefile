@@ -4,7 +4,7 @@ SHELL := /bin/bash
 DUNE := eval "$$(opam env --switch=oxcaml 2>/dev/null)"; dune
 TEST_SUITES := tests/model tests/net tests/hw
 
-.PHONY: all build test promote data pcaps clean
+.PHONY: all build test promote data pcaps board-pcap verify timing board replay clean
 
 all: build
 
@@ -38,3 +38,22 @@ pcaps: build
 	$(PCAPGEN) check build/tracked.pcap -itch $(ITCH) -only $(SYMBOLS)
 	$(PCAPGEN) gen $(ITCH) -o build/full.pcap
 	$(PCAPGEN) check build/full.pcap -itch $(ITCH)
+
+board-pcap: build
+	mkdir -p build
+	$(PCAPGEN) gen $(ITCH) -o build/board_slow.pcap -only $(SYMBOLS) -strict -max 12000000
+	$(PCAPGEN) check build/board_slow.pcap -itch $(ITCH) -only $(SYMBOLS) -strict -max 12000000
+
+verify: build
+	@test -s build/tracked.pcap || { echo 'run make pcaps first'; exit 1; }
+	mkdir -p results
+	./_build/default/bin/verify.exe build/tracked.pcap -verilator -report results/verify_tracked.txt
+
+timing: build
+	./fpga/timing.sh
+
+board: build
+	./fpga/build_board.sh
+
+replay: build
+	./scripts/board_replay.sh

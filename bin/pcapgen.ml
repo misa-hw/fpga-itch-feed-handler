@@ -15,7 +15,7 @@ let day_epoch_ns = 1_564_444_800 * 1_000_000_000
 
 (* Messages kept by [-only]: directory messages for every stock plus all
    messages whose locate belongs to one of the listed symbols. *)
-let filter_of_symbols = function
+let filter_of_symbols ?(strict = false) = function
   | None -> fun (_ : string) -> true
   | Some symbols ->
     let wanted = List.map symbols ~f:Itch.pad_stock in
@@ -25,8 +25,10 @@ let filter_of_symbols = function
       if Char.equal raw.[0] 'R'
       then (
         if List.mem wanted (String.sub raw ~pos:11 ~len:8) ~equal:String.equal
-        then Hash_set.add locates locate;
-        true)
+        then (
+          Hash_set.add locates locate;
+          true)
+        else not strict)
       else Hash_set.mem locates locate
 ;;
 
@@ -41,6 +43,8 @@ let gen =
          "-only"
          (optional (Arg_type.comma_separated string))
          ~doc:"SYM,.. keep only these symbols' messages (plus all directory messages)"
+     and strict =
+       flag "-strict" no_arg ~doc:" with -only: drop directory messages of other symbols too"
      and window_ns =
        flag "-window-ns" (optional_with_default 1000 int) ~doc:"NS batching window (default 1000)"
      in
@@ -55,7 +59,7 @@ let gen =
          Pcap.Writer.write w ~ts_ns:(day_epoch_ns + ts_ns) f
        in
        let p = Packet.Packetizer.create ~window_ns ~emit () in
-       let keep = filter_of_symbols only in
+       let keep = filter_of_symbols ~strict only in
        let last_ts = ref 0 in
        let kept = ref 0 in
        let n =
@@ -84,14 +88,18 @@ let check =
     ~summary:"parse a pcap back and verify it"
     (let%map_open.Command pcap = anon ("PCAP" %: Filename_unix.arg_type)
      and itch = flag "-itch" (optional Filename_unix.arg_type) ~doc:"FILE compare with this ITCH file"
-     and only = flag "-only" (optional (Arg_type.comma_separated string)) ~doc:"SYM,.. as for gen" in
+     and only = flag "-only" (optional (Arg_type.comma_separated string)) ~doc:"SYM,.. as for gen"
+     and strict = flag "-strict" no_arg ~doc:" with -only: as for gen"
+     and max_messages = flag "-max" (optional int) ~doc:"N compare only the first N ITCH messages" in
      fun () ->
        (* the expected message stream, pulled lazily from the ITCH file *)
        let expected =
          Option.map itch ~f:(fun file ->
-           let keep = filter_of_symbols only in
+           let keep = filter_of_symbols ~strict only in
            let q = Queue.create () in
-           ignore (Itch.File.iter_raw file ~f:(fun raw -> if keep raw then Queue.enqueue q raw) : int);
+           ignore
+             (Itch.File.iter_raw ?max_messages file ~f:(fun raw -> if keep raw then Queue.enqueue q raw)
+               : int);
            q)
        in
        let next_seq = ref 1 and msgs = ref 0 and errors = ref 0 and eos = ref false in
@@ -124,4 +132,50 @@ let check =
        if !errors > 0 then exit 1)
 ;;
 
-let () = Command_unix.run (Command.group ~summary:"MoldUDP64 pcap generator" [ "gen", gen; "check", check ])
+(* What the FPGA prints over the UART for this pcap: one "E" line per
+   top-of-book change (hex: seq, slot, bid price, bid size, ask price, ask
+   size) and the change count and hash that appear in its status lines. *)
+let expect =
+  Command.basic
+    ~summary:"model's expected board UART output for a pcap"
+    (let%map_open.Command pcap = anon ("PCAP" %: Filename_unix.arg_type)
+     and max_packets = flag "-max-packets" (optional int) ~doc:"N only the first N packets"
+     and symbols =
+       flag
+         "-symbols"
+         (optional_with_default [ "QQQ"; "SPY"; "IWM"; "DIA"; "TQQQ"; "SQQQ"; "AMD"; "UVXY" ] (Arg_type.comma_separated string))
+         ~doc:"SYM,.. tracked symbols"
+     and summary_only = flag "-summary" no_arg ~doc:" print only the change count and hash" in
+     fun () ->
+       let book = Book.create symbols in
+       let hash = ref 0 and n = ref 0 in
+       ignore
+         (Pcap.iter ?max_packets pcap ~f:(fun ~ts_ns:_ frame ->
+            match Packet.parse frame with
+            | Error _ -> ()
+            | Ok p ->
+              (match Packet.Mold.of_string p.udp_payload with
+               | Error _ -> ()
+               | Ok mold ->
+                 List.iteri mold.messages ~f:(fun k m ->
+                   let seq = mold.sequence + k in
+                   Option.iter (Book.apply book (Itch.of_string m)) ~f:(fun (t : Book.Tob.t) ->
+                     incr n;
+                     hash := Crc32_sw.hash_tob_event !hash ~seq t;
+                     if not summary_only
+                     then
+                       printf
+                         "E %08x %x %08x %08x %08x %08x\n"
+                         (seq land 0xffffffff)
+                         t.slot
+                         t.bid_price
+                         t.bid_shares
+                         t.ask_price
+                         t.ask_shares))))
+          : int);
+       printf "chg=%08x hash=%08x\n" !n !hash)
+;;
+
+let () =
+  Command_unix.run
+    (Command.group ~summary:"MoldUDP64 pcap generator" [ "gen", gen; "check", check; "expect", expect ])
