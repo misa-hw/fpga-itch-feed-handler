@@ -2,9 +2,9 @@
 # (after `make data`, which downloads the ITCH sample).
 SHELL := /bin/bash
 DUNE := eval "$$(opam env --switch=oxcaml 2>/dev/null)"; dune
-TEST_SUITES := tests/model
+TEST_SUITES := tests/model tests/net
 
-.PHONY: all build test data clean
+.PHONY: all build test promote data pcaps clean
 
 all: build
 
@@ -26,3 +26,15 @@ promote:
 clean:
 	$(DUNE) clean
 	@for t in $(TEST_SUITES); do rm -rf $$t/_build; done
+
+# Stage 2: pcaps from the ITCH sample (build/, not committed)
+SYMBOLS ?= QQQ,SPY,IWM,DIA,TQQQ,SQQQ,AMD,UVXY
+ITCH ?= data/07302019.prefix.raw
+PCAPGEN := ./_build/default/bin/pcapgen.exe
+
+pcaps: build
+	mkdir -p build
+	$(PCAPGEN) gen $(ITCH) -o build/tracked.pcap -only $(SYMBOLS)
+	$(PCAPGEN) check build/tracked.pcap -itch $(ITCH) -only $(SYMBOLS)
+	$(PCAPGEN) gen $(ITCH) -o build/full.pcap
+	$(PCAPGEN) check build/full.pcap -itch $(ITCH)

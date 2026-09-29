@@ -1,4 +1,4 @@
-(executable
- (name itch_tool)
- (libraries core core_unix.command_unix core_unix.filename_unix itch_model)
+(executables
+ (names itch_tool pcapgen)
+ (libraries core core_unix.command_unix core_unix.filename_unix itch_model net)
  (preprocess (pps ppx_jane)))

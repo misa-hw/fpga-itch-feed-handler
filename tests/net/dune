@@ -1,0 +1,5 @@
+(library
+ (name test_net)
+ (libraries core core_unix.filename_unix itch_model net)
+ (inline_tests)
+ (preprocess (pps ppx_jane ppx_expect)))
