@@ -15,7 +15,7 @@
 
    All checks are complete by offset 39, before the payload starts at 42, so
    the payload is forwarded cut-through with no buffering: output byte n is
-   input byte n + 42, one cycle later. The UDP length (not the frame length)
+   input byte n + 42, two cycles later (an input and an output register). The UDP length (not the frame length)
    delimits the payload, which strips Ethernet padding.
 
    Not checked, by design: IPv4 header and UDP checksums, and the Ethernet
@@ -71,13 +71,15 @@ let counter spec ~incr = reg_fb spec ~width:32 ~f:(fun c -> mux2 incr (c +:. 1) 
 
 let create _scope (i : _ I.t) : _ O.t =
   let spec = Reg_spec.create ~clock:i.clock ~clear:i.clear () in
-  let rx = i.rx in
-  (* offset of the current byte in its frame (saturating) *)
+  (* Stage 0 registers the byte together with its offset in the frame
+     (saturating), so that the comparisons below start from registers. *)
   let idx_w = 11 in
   let next_idx = wire idx_w in
-  let idx_reg = reg spec ~enable:rx.valid next_idx in
-  let idx = mux2 rx.first (zero idx_w) idx_reg in
-  next_idx <-- mux2 (idx ==:. (1 lsl idx_w) - 1) idx (idx +:. 1);
+  let idx_reg = reg spec ~enable:i.rx.valid next_idx in
+  let idx0 = mux2 i.rx.first (zero idx_w) idx_reg in
+  next_idx <-- mux2 (idx0 ==:. (1 lsl idx_w) - 1) idx0 (idx0 +:. 1);
+  let rx = Stream.Mac_rx.map i.rx ~f:(reg spec) in
+  let idx = reg spec idx0 in
   let at k = idx ==:. k in
   (* (offset, mask, expected) *)
   let checks =

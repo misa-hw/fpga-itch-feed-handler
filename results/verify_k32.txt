@@ -1,0 +1,22 @@
+pcap: build/tracked.pcap (1655589 packets, 1752946 messages)
+simulator: Verilator, 188940055 cycles in 887 s (0.21 Mcycles/s)
+symbols: QQQ,SPY,IWM,DIA,TQQQ,SQQQ,AMD,UVXY
+
+book commands (hardware events): 1740696
+top-of-book changes: hardware 1043727, reference 1043727
+mismatches: 0, reference changes with no hardware event: 0
+
+frames: 1655589 seen, 1655589 accepted, 0 filtered, 0 errors
+mold: 1655589 packets, 1752946 messages, 0 dups, 0 gaps, 0 malformed
+book: 0 unsupported, 0 order overflows, 0 level overflows, 243441 kicks (max 19 per insert), 31 refills
+book: 27156 live orders, 7434 live levels, FIFO max 23 used, 0 FIFO overflows
+
+latency, last byte on rx -> book event valid, in 125 MHz cycles (8 ns):
+  all (1740696): min 17  p50 20  p99 31  p99.9 41  max 2078
+  A ( 821377): min 17  p50 17  p99 29  max 2051
+  C (    605): min 20  p50 20  p99 20  max 2078
+  D ( 773747): min 20  p50 20  p99 20  max 2078
+  E (  29960): min 20  p50 20  p99 20  max 2078
+  F (   1642): min 17  p50 17  p99 23  max 35
+  U ( 106366): min 28  p50 28  p99 40  max 1993
+  X (   6999): min 20  p50 20  p99 20  max 20

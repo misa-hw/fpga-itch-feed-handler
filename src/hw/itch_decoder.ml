@@ -5,8 +5,8 @@
    (types, offset, length) table below is the ITCH 5.0 layout of the eight
    message types the book needs; the hardware is generated from it. Decoded
    fields are presented for one cycle, the cycle after the message's last
-   byte. Messages whose length does not match their type are dropped and
-   counted; other types are ignored. *)
+   byte (plus one input register stage). Messages whose length does not
+   match their type are dropped and counted; other types are ignored. *)
 
 open! Core
 open! Hardcaml
@@ -94,12 +94,14 @@ let lengths = List.map (String.to_list "AFECXDUR") ~f:(fun c -> c, Option.value_
 
 let create _scope (i : _ I.t) : _ O.t =
   let spec = Reg_spec.create ~clock:i.clock ~clear:i.clear () in
-  let m = i.msg in
+  (* stage 0: register the byte with its offset and its message's type *)
   let idx_reg = wire 6 in
-  let idx = mux2 m.first (zero 6) idx_reg in
-  idx_reg <-- reg spec ~enable:m.valid (mux2 (idx ==:. 63) idx (idx +:. 1));
-  let typ_reg = reg spec ~enable:(m.valid &: m.first) m.data in
-  let typ = mux2 m.first m.data typ_reg in
+  let idx0 = mux2 i.msg.first (zero 6) idx_reg in
+  idx_reg <-- reg spec ~enable:i.msg.valid (mux2 (idx0 ==:. 63) idx0 (idx0 +:. 1));
+  let typ_reg = reg spec ~enable:(i.msg.valid &: i.msg.first) i.msg.data in
+  let typ0 = mux2 i.msg.first i.msg.data typ_reg in
+  let m = Stream.Message.map i.msg ~f:(reg spec) in
+  let idx = reg spec idx0 and typ = reg spec typ0 in
   let is c = typ ==:. Char.to_int c in
   let is_any s = String.to_list s |> List.map ~f:is |> List.reduce_exn ~f:( |: ) in
   let field name ~bytes =

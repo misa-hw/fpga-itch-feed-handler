@@ -1,4 +1,12 @@
 (executables
  (names itch_tool pcapgen)
+ (modules itch_tool pcapgen)
  (libraries core core_unix.command_unix core_unix.filename_unix itch_model net)
  (preprocess (pps ppx_jane)))
+
+(executables
+ (names verify gen_verilog)
+ (modules verify gen_verilog)
+ (libraries core core_unix core_unix.command_unix core_unix.filename_unix core_unix.sys_unix
+  hardcaml hardcaml_verilator jane_rope itch_model net feed_hw)
+ (preprocess (pps ppx_hardcaml ppx_jane)))
