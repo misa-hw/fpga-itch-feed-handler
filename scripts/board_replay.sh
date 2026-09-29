@@ -6,21 +6,49 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 pcap="${PCAP:-build/board_slow.pcap}"
 source_ip="${SOURCE_IP:-192.168.10.1}"
+iface="${IFACE:-eno1}"
 max_packets="${MAX_PACKETS:-400}"
 interval_ms="${INTERVAL_MS:-10}"
 uart="${UART:-/dev/ttyUSB0}"
-bit="${BITSTREAM:-fpga/build/board_top_125.bit}"
+bit="${BITSTREAM:-fpga/build/board_top_50.bit}"
 capture="${CAPTURE:-results/board_uart.txt}"
 expected="${EXPECTED:-results/board_expected.txt}"
 mkdir -p "$(dirname "$capture")"
 mkdir -p "$(dirname "$expected")"
 test -s "$bit"
+check_address() {
+  ip -4 -o address show dev "$iface" |
+    awk -v target="$source_ip" '$3 == "inet" { split($4, part, "/"); if (part[1] == target) found = 1 } END { exit !found }'
+}
+if ! check_address; then
+  echo "$source_ip is absent from $iface; assign it after taking $iface out of NetworkManager management" >&2
+  exit 1
+fi
+wait_100_link() {
+  local speed=''
+  for _ in $(seq 1 30); do
+    speed="$(cat "/sys/class/net/$iface/speed" 2>/dev/null || true)"
+    [[ $speed == 100 ]] && return 0
+    sleep 1
+  done
+  echo "$iface negotiated ${speed:-no} Mb/s; this bitstream requires a 100 Mb/s link" >&2
+  return 1
+}
+wait_100_link
 openFPGALoader-xpcu -c xilinxPlatformCableUsb "$bit"
+sleep 2
+if ! check_address; then
+  echo "$source_ip disappeared from $iface during board programming" >&2
+  exit 1
+fi
+wait_100_link
 stty -F "$uart" 115200 raw -echo cs8 -cstopb -parenb
+# Drain data queued before programming (including lines from a previous run).
+timeout 1 cat "$uart" > /dev/null || test "$?" -eq 124
 duration=$(python3 -c 'import sys; print(int(float(sys.argv[1])*int(sys.argv[2])/1000)+8)' "$interval_ms" "$max_packets")
 timeout "$duration" cat "$uart" > "$capture" &
 reader=$!
-sleep 2
+sleep 1
 python3 scripts/replay_udp.py "$pcap" --source-ip "$source_ip" \
   --max-packets "$max_packets" --interval-ms "$interval_ms"
 wait "$reader" || test "$?" -eq 124

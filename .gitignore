@@ -4,3 +4,5 @@ data/
 fpga/build/
 *.pcap
 build/
+results/board_uart.txt
+results/board_expected.txt

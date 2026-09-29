@@ -115,20 +115,31 @@ The board testbench feeds frames with FCS in both modes and compares the UART
 stream to the model. The [physical idle test](results/board_idle.txt)
 programmed the MII bitstream over JTAG and captured complete UART status
 lines with zero error counters. Physical cable replay and comparison remain
-to be recorded.
-For a direct cable from the Wukong to `eno1`, disconnect `eno1` from its
-current network for the short test and connect the board. Force the host to
-advertise only 100 Mb/s full duplex, and add a temporary host address
-(these network changes need root):
+to be recorded. On the first cable attempt, NetworkManager restarted DHCP
+and removed the temporary host address before replay could send a packet;
+the script now checks the address and negotiated 100 Mb/s link before and
+after programming.
+For a direct cable from the Wukong to `eno1`, swap the PC's LAN cable for the
+Wukong cable. [NetworkManager can temporarily stop managing an interface](https://networkmanager.dev/docs/admins/),
+which keeps it from replacing the static address when the link changes.
+These network changes need root:
 
 ```bash
+sudo nmcli device set eno1 managed no
+sudo ip link set eno1 up
 sudo ethtool -s eno1 advertise 0x008 autoneg on
 sudo ip address add 192.168.10.1/24 dev eno1
-TARGET_MHZ=50 make board
+ip -4 -br address show eno1  # confirm 192.168.10.1/24
+cat /sys/class/net/eno1/speed # confirm 100
 BITSTREAM=fpga/build/board_top_50.bit make replay
-sudo ip address del 192.168.10.1/24 dev eno1
+sudo ip address del 192.168.10.1/24 dev eno1  # run even if replay fails
 sudo ethtool -s eno1 advertise 0x02f autoneg on
+sudo nmcli device set eno1 managed yes
 ```
+
+Reconnect the LAN cable after restoring NetworkManager management. If the
+address has already disappeared, the `ip address del` command can report
+that it was not found; continue the remaining restore commands.
 
 `make replay` uses ordinary multicast UDP sockets, so no static ARP entry,
 raw-socket privilege or `tcpreplay` package is needed. It sends the first

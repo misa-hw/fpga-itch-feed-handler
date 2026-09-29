@@ -69,7 +69,11 @@ def main():
     sock = None
     if not args.dry_run:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, source)
+        try:
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, source)
+        except OSError as exc:
+            sock.close()
+            parser.error(f"cannot use source address {args.source_ip}: {exc}; check the address on eno1")
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1)
     sent = 0
     try:
