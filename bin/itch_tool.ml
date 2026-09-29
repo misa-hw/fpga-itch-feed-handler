@@ -139,9 +139,49 @@ let book =
           : int))
 ;;
 
+let hwmodel =
+  Command.basic
+    ~summary:"run the hardware architecture model next to the reference book"
+    (let%map_open.Command file = file_arg
+     and max_messages = max_arg
+     and symbols = symbols_arg
+     and order_bucket_bits =
+       flag "-order-bucket-bits" (optional_with_default Hw_book.default_params.order_bucket_bits int) ~doc:"N"
+     and level_bucket_bits =
+       flag "-level-bucket-bits" (optional_with_default Hw_book.default_params.level_bucket_bits int) ~doc:"N"
+     and cache_k = flag "-cache-k" (optional_with_default Hw_book.default_params.cache_k int) ~doc:"N" in
+     fun () ->
+       let p = { Hw_book.default_params with order_bucket_bits; level_bucket_bits; cache_k } in
+       let book = Book.create symbols and hw = Hw_book.create ~p symbols in
+       let events = ref 0 and mismatches = ref 0 in
+       let n =
+         Itch.File.iter ?max_messages file ~f:(fun m ->
+           let a = Book.apply book m and b = Hw_book.apply hw m in
+           if Option.is_some a then incr events;
+           if not ([%equal: Book.Tob.t option] a b)
+           then (
+             incr mismatches;
+             if !mismatches <= 5
+             then
+               printf
+                 "MISMATCH at message %d: reference %s, hw model %s\n"
+                 !events
+                 (Option.value_map a ~default:"-" ~f:Book.Tob.to_string)
+                 (Option.value_map b ~default:"-" ~f:Book.Tob.to_string)))
+       in
+       let capacity bits = 2 * (1 lsl bits) * p.ways in
+       printf "params: %s\n" (Sexp.to_string (Hw_book.sexp_of_params p));
+       printf
+         "order table %d entries, level table %d entries\n"
+         (capacity p.order_bucket_bits)
+         (capacity p.level_bucket_bits);
+       printf "%d messages, %d top-of-book events, %d mismatches\n" n !events !mismatches;
+       print_s [%sexp (Hw_book.stats hw : Hw_book.stats)])
+;;
+
 let () =
   Command_unix.run
     (Command.group
        ~summary:"Nasdaq ITCH 5.0 reference model"
-       [ "stats", stats; "activity", activity; "profile", profile; "book", book ])
+       [ "stats", stats; "activity", activity; "profile", profile; "book", book; "hwmodel", hwmodel ])
 ;;
