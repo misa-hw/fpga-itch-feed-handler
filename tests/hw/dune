@@ -1,0 +1,5 @@
+(library
+ (name test_hw)
+ (libraries core core_unix.sys_unix hardcaml hardcaml_waveterm itch_model net feed_hw)
+ (inline_tests)
+ (preprocess (pps ppx_hardcaml ppx_jane ppx_expect)))

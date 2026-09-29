@@ -2,7 +2,7 @@
 # (after `make data`, which downloads the ITCH sample).
 SHELL := /bin/bash
 DUNE := eval "$$(opam env --switch=oxcaml 2>/dev/null)"; dune
-TEST_SUITES := tests/model tests/net
+TEST_SUITES := tests/model tests/net tests/hw
 
 .PHONY: all build test promote data pcaps clean
 

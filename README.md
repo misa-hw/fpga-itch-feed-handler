@@ -8,7 +8,7 @@ Work in progress, built in stages:
 
 1. [x] OCaml reference model: ITCH 5.0 codec and reference order book (`src/model`)
 2. [x] Packet generator: MoldUDP64 → UDP → IPv4 → Ethernet → pcap (`src/net`)
-3. [ ] Hardcaml Ethernet/IPv4/UDP/MoldUDP64 parser
+3. [x] Hardcaml Ethernet/IPv4/UDP filter and MoldUDP64 splitter (`src/hw/frame_parser.ml`, `mold_parser.ml`)
 4. [ ] Hardcaml ITCH decoder
 5. [ ] Hardware order book
 6. [ ] Full-pipeline verification against the model
