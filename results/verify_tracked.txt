@@ -1,5 +1,5 @@
 pcap: build/tracked.pcap (1655589 packets, 1752946 messages)
-simulator: Verilator, 188940055 cycles in 850 s (0.22 Mcycles/s)
+simulator: Verilator, 188940055 cycles in 659 s (0.29 Mcycles/s)
 symbols: QQQ,SPY,IWM,DIA,TQQQ,SQQQ,AMD,UVXY
 
 book commands: hardware 1740696, reference 1740696

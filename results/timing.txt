@@ -15,3 +15,14 @@ Core receive pipeline: fpga/timing.sh, eight-level top cache
   Yosys: 15,125 estimated logic cells, 67 RAMB36E1, 62 RAMB18E1
   Routed Fmax: 89.61 MHz receive (PASS at 25 MHz)
                120.39 MHz UART/control (PASS at 50 MHz)
+
+After the board bring-up workarounds (2026-09-30: yosys FSM extraction
+disabled; tables deeper than 2048 rows built from 2048-deep BRAM pieces):
+Core receive pipeline: fpga/timing.sh, eight-level top cache
+  Constraint: 125 MHz
+  Routed Fmax: 78.59 MHz (FAIL; was 93.36 MHz before the workarounds)
+  Critical path: 12.72 ns to a level-bank BRAM data input
+                 3.37 ns logic, 9.36 ns routing
+  Yosys: 65 RAM32M, 67 RAMB36E1, 62 RAMB18E1; no FSM re-encoded
+100 Mb/s board build (TARGET_MHZ=50), same workarounds:
+  Routed Fmax: 94.23 MHz receive (PASS at 25 MHz), 111.92 MHz UART (PASS at 50 MHz)

@@ -79,10 +79,10 @@ measured separately.
 | Peak live price levels | 7,633 / 16,384 slots |
 | FIFO maximum occupancy in full replay | 54 / 512 commands |
 | Cache refills in full replay | 1,097 |
-| Core openXC7 routed Fmax | 93.36 MHz; 125 MHz target missed |
+| Core openXC7 routed Fmax | 78.59 MHz with the board workarounds (93.36 MHz before); 125 MHz target missed |
 | Core logic cells estimated by Yosys | 13,023 |
 | Core block RAM | 67 RAMB36 + 62 RAMB18 |
-| 100 Mb/s board routed Fmax | 89.61 MHz receive / 120.39 MHz UART; 25 / 50 MHz targets met |
+| 100 Mb/s board routed Fmax | 94.23 MHz receive / 111.92 MHz UART; 25 / 50 MHz targets met |
 
 The complete synthesis and timing numbers are in
 [`results/timing.txt`](results/timing.txt).

@@ -210,6 +210,11 @@ the current Fmax.
 Registering the BRAM write port was also tried: the eight-level core routed
 at 92.65 MHz, so that extra pipeline stage was removed.
 
+The board workarounds of section 9 (no FSM re-encoding, 2,048-deep BRAM
+pieces) cost timing: the core now routes at 78.59 MHz. Its critical path,
+12.72 ns, still ends at a level-bank BRAM input and is 74% routing. The
+100 Mb/s board build needs only 25 MHz and routes at 94 MHz.
+
 ## 8. Clocking and reset on the board
 
 - **Receive domain:** everything in the receive path runs on the PHY's
