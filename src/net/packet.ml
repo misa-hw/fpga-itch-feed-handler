@@ -158,9 +158,23 @@ module Mold = struct
   ;;
 end
 
+(* Order frames from the board to the host: unicast on the direct link
+   (the host captures them with tcpdump). *)
+let order_endpoints =
+  { src_mac = Mac.of_string "02:00:00:00:00:10"
+  ; dst_mac = Mac.of_string "02:00:00:00:00:02"
+  ; src_ip = Ip.of_string "192.168.10.2"
+  ; dst_ip = Ip.of_string "192.168.10.1"
+  ; src_port = 26400
+  ; dst_port = 26400
+  }
+;;
+
 (* Build a complete Ethernet frame around a UDP payload. [ip_id] is the IPv4
-   identification field (incremented per packet by the sender). *)
-let frame ?(ip_id = 0) (ep : endpoints) payload =
+   identification field (incremented per packet by the sender).
+   [~udp_checksum:false] sends a zero UDP checksum ("none", allowed over
+   IPv4), as the board's order frames do so their headers are constant. *)
+let frame ?(ip_id = 0) ?(udp_checksum = true) (ep : endpoints) payload =
   let udp_len = udp_header_len + String.length payload in
   let ip_len = ip_header_len + udp_len in
   let frame_len = Int.max min_frame_len (eth_header_len + ip_len) in
@@ -207,7 +221,7 @@ let frame ?(ip_id = 0) (ep : endpoints) payload =
       ~pos:udp
       ~len:udp_len
   in
-  put ~pos:(udp + 6) ~len:2 (if c = 0 then 0xffff else c);
+  if udp_checksum then put ~pos:(udp + 6) ~len:2 (if c = 0 then 0xffff else c);
   Bytes.to_string b
 ;;
 

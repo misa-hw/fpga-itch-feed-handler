@@ -50,8 +50,10 @@ end
 module O = struct
   type 'a t =
     { stats : 'a Stats.t [@rtlmangle "_"]
-    ; sample_valid : 'a
+    ; sample_valid : 'a (* an event: [sample] and [message_time] are its *)
     ; sample : 'a [@bits 32]
+    ; message_time : 'a [@bits 32] (* [now] when its message's last byte was on the MAC stream *)
+    ; now : 'a [@bits 32] (* the cycle counter *)
     }
   [@@deriving hardcaml]
 end
@@ -83,31 +85,14 @@ let times spec x k ~width =
   pipeline spec ~n:(product_latency - levels) sum
 ;;
 
-let create ~offset ?(capacity = 512 + 16) scope (i : _ I.t) : _ O.t =
-  let spec = Reg_spec.create ~clock:i.clock ~clear:i.clear () in
-  let now = reg_fb spec ~width:32 ~f:(fun t -> t +:. 1) in
+(* The histogram of [sample] (taken when [valid]; never two samples less
+   than 3 cycles apart) and the scanner that publishes its statistics. *)
+let histogram ~spec ~clock ~valid ~sample =
   (* after reset, zero the histograms (a reset does not clear BRAM) *)
   let init = reg_fb spec ~width:(bin_bits + 1) ~f:(fun c -> mux2 (msb c) c (c +:. 1)) in
   let ready = msb init in
-  (* ---- pair commands with events ---- *)
-  let rd = wire 1 in
-  let fifo =
-    Fifo.create
-      ~showahead:true
-      ~scope
-      ()
-      ~capacity
-      ~clock:i.clock
-      ~clear:i.clear
-      ~wr:i.cmd
-      ~d:now
-      ~rd
-  in
-  let pop = i.event &: ~:(fifo.empty) in
-  assign rd pop;
-  let sample = now -: fifo.q +:. offset in
   (* ---- histogram: read-modify-write, and a mirror for the scanner ---- *)
-  let v1 = reg spec (pop &: ready) in
+  let v1 = reg spec (valid &: ready) in
   let s1 = reg spec sample in
   let b1 = mux2 (s1 >=:. bins - 1) (ones bin_bits) (sel_bottom s1 ~width:bin_bits) in
   let v2 = reg spec v1 in
@@ -119,8 +104,8 @@ let create ~offset ?(capacity = 512 + 16) scope (i : _ I.t) : _ O.t =
   let memory ~read_address ~read_enable =
     ram_rbw
       ~write_port:
-        { write_clock = i.clock; write_address = wr_addr; write_enable = wr_en; write_data = wr_data }
-      ~read_port:{ read_clock = i.clock; read_address; read_enable }
+        { write_clock = clock; write_address = wr_addr; write_enable = wr_en; write_data = wr_data }
+      ~read_port:{ read_clock = clock; read_address; read_enable }
       bins
   in
   assign old (memory ~read_address:b1 ~read_enable:v1);
@@ -169,9 +154,35 @@ let create ~offset ?(capacity = 512 + 16) scope (i : _ I.t) : _ O.t =
   let p99 = publish (first_hit (c100 >: thr99)) in
   let p999 = publish (first_hit (c1000 >: thr999)) in
   let published_count = reg spec ~enable:(at (bins + 10)) n_pass in
-  { O.stats = { Stats.count = published_count; p50; p99; p999; max }
+  { Stats.count = published_count; p50; p99; p999; max }
+;;
+
+let create ~offset ?(capacity = 512 + 16) scope (i : _ I.t) : _ O.t =
+  let spec = Reg_spec.create ~clock:i.clock ~clear:i.clear () in
+  let now = reg_fb spec ~width:32 ~f:(fun t -> t +:. 1) in
+  (* ---- pair commands with events ---- *)
+  let rd = wire 1 in
+  let fifo =
+    Fifo.create
+      ~showahead:true
+      ~scope
+      ()
+      ~capacity
+      ~clock:i.clock
+      ~clear:i.clear
+      ~wr:i.cmd
+      ~d:now
+      ~rd
+  in
+  let pop = i.event &: ~:(fifo.empty) in
+  assign rd pop;
+  let sample = now -: fifo.q +:. offset in
+  let message_time = fifo.q -:. offset in
+  { O.stats = histogram ~spec ~clock:i.clock ~valid:pop ~sample
   ; sample_valid = pop
   ; sample
+  ; message_time
+  ; now
   }
 ;;
 

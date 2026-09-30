@@ -1,4 +1,4 @@
 (library
  (name feed_hw)
- (libraries core hardcaml itch_model)
+ (libraries core hardcaml itch_model net)
  (preprocess (pps ppx_hardcaml ppx_jane)))
