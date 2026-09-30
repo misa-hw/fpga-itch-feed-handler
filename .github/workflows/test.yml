@@ -32,7 +32,12 @@ jobs:
       - name: System packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y opam autoconf bubblewrap rsync pkg-config libgmp-dev libffi-dev zlib1g-dev
+          sudo apt-get install -y autoconf bubblewrap rsync patch unzip pkg-config libgmp-dev libffi-dev zlib1g-dev
+          # Ubuntu's opam (2.1) cannot fetch a git repository pinned to a commit
+          sudo curl -fsSL -o /usr/local/bin/opam \
+            https://github.com/ocaml/opam/releases/download/2.5.0/opam-2.5.0-x86_64-linux
+          sudo chmod +x /usr/local/bin/opam
+          opam --version
 
       - name: Restore the OxCaml switch
         id: cache
@@ -48,7 +53,7 @@ jobs:
           opam switch create oxcaml --packages ocaml-variants.5.2.0+ox \
             --repos "ox=$OX_REPO,default"
           opam install --switch=oxcaml $PACKAGES
-          opam clean --switch=oxcaml --all-switches --download-cache --logs
+          opam clean --download-cache --logs
 
       - name: Versions
         run: opam list --switch=oxcaml ocaml-variants dune hardcaml core
