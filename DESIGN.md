@@ -220,12 +220,24 @@ Bugs found by this process before hardware (the board found three more; see
 
 ## 7. Timing
 
-Fmax is reported by nextpnr-xilinx for the core pipeline (`fpga/timing.sh`,
-`src/hw/timing_top.ml`). The first place-and-route closed at 57.9 MHz with
-a 32-entry cache; a later route reached 64.16 MHz, still short of the
-125 MHz target. The critical path ran through the cache update, whose
+**The core meets 125 MHz with Vivado** (`fpga/vivado_build.sh` on
+`src/hw/timing_top.ml`: WNS +0.021 ns with synthesis retiming,
+ExtraTimingOpt placement and AggressiveExplore physical optimisation and
+routing), using 23% of the LUTs and 73% of the block RAM. The 1 Gb/s board
+image, which adds the MAC, the GMII capture, the UART and the counters,
+meets it too (WNS +0.009 ns). The background refill needed two register
+stages to close: the sorter eviction is registered before it joins the
+discard maximum, and the merge decision (which scan entries survive, and
+whether they beat the cache) is registered before it drives the LUT-RAM
+cache write enable. The blocking-refill design had met it with WNS
++0.019 ns (-0.628 ns with default directives).
+
+Most of the timing work was done earlier against nextpnr-xilinx (openXC7),
+whose numbers were later found not to hold on silicon (section 9). The
+first place-and-route closed at 57.9 MHz with a 32-entry cache, and a later
+route at 64.16 MHz. The critical path ran through the cache update, whose
 "shift after the deleted entry" mask had become a 32-long OR chain. The
-subsequent changes were:
+changes that followed, all still in the design:
 - Compute the prefix OR log-depth.
 - Move the prefix OR, the insert condition and the "cache holds every level"
   test into the compare stage, so the write stage is a shallow per-entry
@@ -235,32 +247,14 @@ subsequent changes were:
 - Give the frame parser and ITCH decoder an input register stage.
 - Split the refill's discard tracking into two accumulators.
 - Reduce the sorted cache to eight levels per side, a measured trade of
-  1,097 refills for a shorter combinational path. A four-level version
-  routed at 92.92 MHz but needed 4,731 refills. The final eight-level route
-  reached 93.36 MHz, with 1,097 refills and no overflow in the strict
-  1.74-million-command replay. The 125 MHz gigabit target remains unmet.
+  refills for a shorter combinational path (1,097 blocking refills instead
+  of 191 at 16 levels; a four-level version needed 4,731).
 
-The final routed critical path ends at a level-bank BRAM data input:
-10.71 ns total (3.00 ns logic, 7.71 ns routing). A further gigabit version would need
-to restructure the level-bank write datapath and placement, or bank the
-update across more cycles; it cannot claim 1 Gb/s physical throughput from
-the current Fmax.
-
-Registering the BRAM write port was also tried: the eight-level core routed
-at 92.65 MHz, so that extra pipeline stage was removed.
-
-**With Vivado, the core meets 125 MHz** (WNS +0.021 ns with synthesis
-retiming, ExtraTimingOpt placement and AggressiveExplore physical
-optimisation and routing), using 23% of the LUTs and 73% of the block RAM.
-The background refill needed two more register stages to close: the sorter
-eviction is registered before it joins the discard maximum, and the merge
-decision (which scan entries survive, and whether they beat the cache) is
-registered before it drives the LUT-RAM cache write enable. The blocking
-design met 125 MHz with WNS +0.019 ns (-0.628 ns with default directives). That is the number to trust (see section 9). With openXC7,
-the board workarounds of section 9 (no FSM re-encoding, 2,048-deep BRAM
-pieces) cost timing: the core routes at 78.59 MHz. Its critical path,
-12.72 ns, still ends at a level-bank BRAM input and is 74% routing. The
-100 Mb/s board build needs only 25 MHz and routes at 94 MHz.
+openXC7's best route of that design reached 93.36 MHz, with its critical
+path ending at a level-bank BRAM data input (10.71 ns, 72% routing);
+registering the BRAM write port did not help (92.65 MHz). With the board
+workarounds of section 9 (no FSM re-encoding, 2,048-deep BRAM pieces) it
+routes at 78.59 MHz. The 100 Mb/s board build needs only 25 MHz.
 
 ## 8. Clocking and reset on the board
 
