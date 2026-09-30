@@ -27,6 +27,8 @@ module Counters = struct
     { frame : 'a Frame_parser.Counters.t [@rtlmangle "_"]
     ; mold : 'a Mold_parser.Counters.t [@rtlmangle "_"]
     ; bad_length : 'a [@bits 32]
+    ; decoded_orders : 'a [@bits 32]
+    ; filtered_commands : 'a [@bits 32]
     ; book : 'a Order_book.Stats.t [@rtlmangle "_"]
     ; mapped : 'a [@bits Symbol_filter.num_slots]
     }
@@ -54,6 +56,7 @@ module O = struct
 end
 
 let create ?p ?fifo_capacity scope (i : _ I.t) : _ O.t =
+  let spec = Reg_spec.create ~clock:i.clock ~clear:i.clear () in
   let front = Rx_front.hierarchical scope { clock = i.clock; clear = i.clear; cfg = i.cfg.net; rx = i.rx } in
   let dec = Itch_decoder.hierarchical scope { clock = i.clock; clear = i.clear; msg = front.msg } in
   let filter =
@@ -67,11 +70,24 @@ let create ?p ?fifo_capacity scope (i : _ I.t) : _ O.t =
       }
   in
   let book = Order_book.hierarchical ?p ?fifo_capacity scope { clock = i.clock; clear = i.clear; cmd = filter.cmd } in
+  let order_decoded =
+    dec.decoded.valid
+    &: (dec.decoded.kind <>: Itch_decoder.Kind.const Other)
+    &: (dec.decoded.kind <>: Itch_decoder.Kind.const Directory)
+  in
+  let decoded_orders =
+    reg_fb spec ~width:32 ~f:(fun n -> mux2 order_decoded (n +:. 1) n)
+  in
+  let filtered_commands =
+    reg_fb spec ~width:32 ~f:(fun n -> mux2 filter.cmd.valid (n +:. 1) n)
+  in
   { O.event = book.event
   ; counters =
       { Counters.frame = front.frame_counters
       ; mold = front.mold_counters
       ; bad_length = dec.bad_length
+      ; decoded_orders
+      ; filtered_commands
       ; book = book.stats
       ; mapped = filter.mapped
       }

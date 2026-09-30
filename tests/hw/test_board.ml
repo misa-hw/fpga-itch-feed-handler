@@ -102,14 +102,14 @@ let status_field line name =
     | _ -> None)
 ;;
 
-let%expect_test "board: GMII in, UART out, equal to the model" =
+let replay_real_pcap ~mii_mode =
   match Lazy.force Sample_data.tracked_pcap with
   | None -> ()
   | Some _ ->
     (match Sample_data.find "build/board_slow.pcap" with
      | None -> ()
      | Some pcap ->
-       let t = create () in
+       let t = create ~mii_mode () in
        let book = Book.create Timing_top.default_symbols in
        let expected = Queue.create () and hash = ref 0 in
        let n_packets = 400 in
@@ -133,12 +133,15 @@ let%expect_test "board: GMII in, UART out, equal to the model" =
                        e.bid_shares
                        e.ask_price
                        e.ask_shares))));
-           send_gmii t frame;
+           (if mii_mode then send_mii else send_gmii) t frame;
            (* slow enough for the UART: ~2 lines per packet at most *)
            idle t 1500)
        in
-       send_gmii t ~corrupt:true (Packet.frame Packet.default_endpoints "garbage");
-       idle t 50_000;
+       (if mii_mode then send_mii else send_gmii)
+         t
+         ~corrupt:true
+         (Packet.frame Packet.default_endpoints "garbage");
+       idle t 400_000 (* let the UART drain: status lines are long *);
        let lines = String.split_lines (Buffer.contents t.text) in
        let e_lines = List.filter lines ~f:(String.is_prefix ~prefix:"E ") in
        let status =
@@ -150,6 +153,13 @@ let%expect_test "board: GMII in, UART out, equal to the model" =
          "%d E lines, equal to the model: %b\n"
          (List.length e_lines)
          ([%equal: string list] e_lines (Queue.to_list expected));
+       (* diagnostics when they differ: missing lines, and text that is
+          neither an event nor a status line *)
+       Queue.iter expected ~f:(fun l ->
+         if not (List.mem e_lines l ~equal:String.equal) then printf "missing: %s\n" l);
+       List.iter lines ~f:(fun l ->
+         if not (String.is_prefix l ~prefix:"E " || String.is_prefix l ~prefix:"S")
+         then printf "other text: %S\n" l);
        let f = status_field status in
        printf
          "status: link=%c frames=%s accepted=%s fcs=%s chg=%s (model %08x) hash=%s (model %08x) lost=%s\n"
@@ -161,7 +171,19 @@ let%expect_test "board: GMII in, UART out, equal to the model" =
          (Queue.length expected)
          (Option.value_exn (f "hash"))
          !hash
-         (Option.value_exn (f "lost")));
+         (Option.value_exn (f "lost")))
+;;
+
+let%expect_test "board: GMII in, UART out, equal to the model" =
+  replay_real_pcap ~mii_mode:false;
+  [%expect {|
+    39 E lines, equal to the model: true
+    status: link=1 frames=00000191 accepted=00000190 fcs=00000001 chg=00000027 (model 00000027) hash=6debb1d9 (model 6debb1d9) lost=00000000
+    |}]
+;;
+
+let%expect_test "board: real packets in MII mode" =
+  replay_real_pcap ~mii_mode:true;
   [%expect {|
     39 E lines, equal to the model: true
     status: link=1 frames=00000191 accepted=00000190 fcs=00000001 chg=00000027 (model 00000027) hash=6debb1d9 (model 6debb1d9) lost=00000000

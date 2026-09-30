@@ -1,7 +1,3 @@
-Physical Wukong idle bring-up, 100 Mb/s MII bitstream
-JTAG SRAM programming: PASS
-UART 115200: PASS; five fresh complete status lines in a six-second capture
-Counters: zero frames, FCS errors, gaps, overflows, and top-of-book changes
-RX clock without a direct cable: about 2.5 million cycles per second
-Last status:
-S1 frm=00000000 acc=00000000 flt=00000000 err=00000000 fcs=00000000 msg=00000000 gap=00000000 dup=00000000 cmd=00000000 chg=00000000 hash=00000000 lost=00000000 kick=00000000 rfl=00000000 ovf=00000000 ord=00000000 lvl=00000000 map=00 clk=0b5180f6
+Idle check of fpga/build/board_top_50.bit (100 Mb/s MII build with the bring-up fixes), no traffic:
+S1 frm=00000000 acc=00000000 flt=00000000 err=00000000 fcs=00000000 msg=00000000 gap=00000000 dup=00000000 cmd=00000000 chg=00000000 hash=00000000 lost=00000000 kick=00000000 rfl=00000000 ovf=00000000 ord=00000000 lvl=00000000 map=00 blen=00000000 dord=00000000 fcmd=00000000 fmax=00000000 uns=00000000 bst=01 bfe=1 clk=015592ff
+bst=01: the order book finished clearing its tables and waits in Idle; bfe=1: its FIFO is empty.

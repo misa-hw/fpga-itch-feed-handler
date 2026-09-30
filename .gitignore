@@ -6,3 +6,4 @@ fpga/build/
 build/
 results/board_uart.txt
 results/board_expected.txt
+__pycache__/

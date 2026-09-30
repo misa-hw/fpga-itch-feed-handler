@@ -30,5 +30,44 @@ let () =
   | [ _; "board_top_mii"; file ] ->
     let module C = Circuit.With_interface (Board_top.I) (Board_top.O) in
     write ~name:"board_top" (fun scope -> C.create_exn ~name:"board_top" (Board_top.create ~mii_mode:true scope)) file
-  | _ -> eprintf "usage: gen_verilog (feed_handler|timing_top|board_top|board_top_mii) OUT.v\n"
+  | [ _; "board_top_mii_sim"; file ] ->
+    (* for gate-level simulation (fpga/netlist_sim): same logic, but 4-cycle
+       UART bits, a 20k-cycle "second" and a short PHY reset *)
+    let module C = Circuit.With_interface (Board_top.I) (Board_top.O) in
+    write
+      ~name:"board_top"
+      (fun scope ->
+        C.create_exn
+          ~name:"board_top"
+          (Board_top.create ~mii_mode:true ~bit_cycles:4 ~second:20_000 ~phy_reset_cycles:8 scope))
+      file
+  | [ _; ("board_top_selftest" | "board_top_selftest_sim" as kind); pcap; file ] ->
+    (* frames played from a ROM instead of the PHY; see Board_top.selftest_player *)
+    let frames = ref [] in
+    ignore (Net.Pcap.iter pcap ~f:(fun ~ts_ns:_ f -> frames := f :: !frames) : int);
+    let frames = List.rev !frames in
+    let sim = String.equal kind "board_top_selftest_sim" in
+    let module C = Circuit.With_interface (Board_top.I) (Board_top.O) in
+    write
+      ~name:"board_top"
+      (fun scope ->
+        C.create_exn
+          ~name:"board_top"
+          (if sim
+           then
+             Board_top.create
+               ~mii_mode:true
+               ~bit_cycles:4
+               ~second:20_000
+               ~phy_reset_cycles:8
+               ~selftest:frames
+               ~selftest_delay:8000
+               scope
+           else Board_top.create ~mii_mode:true ~selftest:frames scope))
+      file
+  | [ _; "bram_probe"; file ] ->
+    let module C = Circuit.With_interface (Bram_probe.I) (Bram_probe.O) in
+    write ~name:"bram_probe" (fun scope -> C.create_exn ~name:"bram_probe" (Bram_probe.create scope)) file
+  | _ ->
+    eprintf "usage: gen_verilog (feed_handler|timing_top|board_top|board_top_mii|board_top_mii_sim) OUT.v\n       gen_verilog (board_top_selftest|board_top_selftest_sim) PCAP OUT.v\n"
 ;;

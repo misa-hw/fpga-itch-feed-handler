@@ -61,6 +61,22 @@ let sync ~clock s =
   reg r (reg r s)
 ;;
 
+(* Reset for the PHY-clocked domain. RX_CLK comes from the PHY, which this
+   design holds in reset for ~20 ms after configuration: meanwhile RX_CLK can
+   stop or glitch, and a glitch corrupts state (a one-hot state machine
+   stuck in an invalid state was seen on the board). So the domain is held in
+   clear for the whole PHY reset and for 256 clean RX_CLK cycles after it,
+   on top of the power-on and KEY0 clears. [phy_ready] comes from the 50 MHz
+   domain and is synchronised here. *)
+let rx_domain_clear ~clock ~reset_n ~phy_ready =
+  let r = Reg_spec.create ~clock () in
+  let ready = sync ~clock phy_ready in
+  let settled =
+    reg_fb r ~width:9 ~f:(fun c -> mux2 ~:ready (zero 9) (mux2 (msb c) c (c +:. 1)))
+  in
+  reg r (domain_clear ~clock ~reset_n |: ~:(msb settled))
+;;
+
 let event_bits = 32 + 8 + (4 * 32)
 
 (* The fields of a change as hashed and printed; the model computes the same
@@ -77,17 +93,79 @@ module Event_fifo = Async_fifo.Make (struct
     let optimize_for_same_clock_rate_and_always_reading = false
   end)
 
-let create ?(mii_mode = false) ?(bit_cycles = 434) ?(second = 50_000_000) ?(phy_reset_cycles = 1 lsl 20) scope (i : _ I.t) : _ O.t =
+(* Self-test source: Ethernet frames (no preamble, no FCS) held in a ROM and
+   played into the pipeline at the MAC output, one byte every other cycle
+   (the MII byte rate), [gap] idle cycles apart, once, [delay] cycles after
+   reset. Used to test the built design on the board without the PHY or a
+   cable: the UART status line must then show the model's change count and
+   hash for these frames. *)
+let selftest_player ~clock ~clear ~frames ~delay ~gap =
+  let spec = Reg_spec.create ~clock ~clear () in
+  let words =
+    List.concat_map frames ~f:(fun f ->
+      let n = String.length f in
+      List.init n ~f:(fun k ->
+        (* last | first | data *)
+        ((if k = n - 1 then 1 else 0) lsl 9) lor ((if k = 0 then 1 else 0) lsl 8)
+        lor Char.to_int f.[k]))
+  in
+  let n_words = List.length words in
+  let addr_w = num_bits_to_represent n_words in
+  let rom_bits =
+    List.map words ~f:(fun w -> Bits.of_unsigned_int ~width:10 w) |> Array.of_list
+  in
+  let open Always in
+  let wait = Variable.reg spec ~width:(num_bits_to_represent delay) in
+  let addr = Variable.reg spec ~width:addr_w in
+  let phase = Variable.reg spec ~width:1 in
+  let idle = Variable.reg spec ~width:(num_bits_to_represent gap) in
+  let q = (rom ~read_addresses:[| addr.value |] rom_bits).(0) in
+  let running = (wait.value ==:. delay) &: (addr.value <:. n_words) &: (idle.value ==:. 0) in
+  let emit = running &: phase.value in
+  compile
+    [ when_ (wait.value <>:. delay) [ wait <-- wait.value +:. 1 ]
+    ; when_ (idle.value <>:. 0) [ idle <-- idle.value -:. 1 ]
+    ; when_ running [ phase <-- ~:(phase.value) ]
+    ; when_
+        emit
+        [ addr <-- addr.value +:. 1; when_ (bit q ~pos:9) [ idle <--. gap ] ]
+    ];
+  { Stream.Mac_rx.valid = reg spec emit
+  ; data = reg spec (sel_bottom q ~width:8)
+  ; first = reg spec (emit &: bit q ~pos:8)
+  ; last = reg spec (emit &: bit q ~pos:9)
+  ; err = gnd
+  }
+;;
+
+let create
+  ?(mii_mode = false)
+  ?(bit_cycles = 434)
+  ?(second = 50_000_000)
+  ?(phy_reset_cycles = 1 lsl 20)
+  ?selftest
+  ?(selftest_delay = 1 lsl 20)
+  scope
+  (i : _ I.t)
+  : _ O.t
+  =
   (* ---------------- rxc domain ---------------- *)
   let rxc = i.e_rxc in
-  let clear_rx = domain_clear ~clock:rxc ~reset_n:i.reset_n in
+  let phy_ready = wire 1 in
+  let clear_rx = rx_domain_clear ~clock:rxc ~reset_n:i.reset_n ~phy_ready in
   let rs = Reg_spec.create ~clock:rxc ~clear:clear_rx () in
   let rin = Reg_spec.create ~clock:rxc () in
   (* input registers (packed into the IOBs) *)
   let rxd = reg rin i.e_rxd and rxdv = reg rin i.e_rxdv and rxer = reg rin i.e_rxer in
   let mac = Gmii_rx.hierarchical ~mii_mode scope { clock = rxc; clear = clear_rx; rx_dv = rxdv; rx_er = rxer; rxd } in
   let fh =
-    Feed_handler.create scope { clock = rxc; clear = clear_rx; cfg = Timing_top.config (); rx = mac.rx }
+    let rx =
+      match selftest with
+      | None -> mac.rx
+      | Some frames ->
+        selftest_player ~clock:rxc ~clear:clear_rx ~frames ~delay:selftest_delay ~gap:100
+    in
+    Feed_handler.create scope { clock = rxc; clear = clear_rx; cfg = Timing_top.config (); rx }
   in
   let ev = fh.event in
   let change = ev.valid &: ev.changed in
@@ -138,6 +216,13 @@ let create ?(mii_mode = false) ?(bit_cycles = 434) ?(second = 50_000_000) ?(phy_
     ; "ord", uresize c.book.orders ~width:32
     ; "lvl", uresize c.book.levels ~width:32
     ; "map", uresize c.mapped ~width:8
+    ; "blen", c.bad_length
+    ; "dord", c.decoded_orders
+    ; "fcmd", c.filtered_commands
+    ; "fmax", uresize c.book.fifo_max_used ~width:32
+    ; "uns", c.book.unsupported
+    ; "bst", uresize c.book.debug_state ~width:8
+    ; "bfe", uresize c.book.debug_fifo_empty ~width:4
     ; "clk", rx_cycles
     ]
   in
@@ -228,8 +313,9 @@ let create ?(mii_mode = false) ?(bit_cycles = 434) ?(second = 50_000_000) ?(phy_
       mux2 (t ==:. phy_reset_cycles) t (t +:. 1))
   in
   ignore ack_seen;
+  Signal.assign phy_ready (phy_timer ==:. phy_reset_cycles);
   { O.uart_tx = tx
-  ; e_reset = phy_timer ==:. phy_reset_cycles
+  ; e_reset = phy_ready
   ; e_mdc = gnd
   ; e_txen = gnd
   ; e_txer = gnd

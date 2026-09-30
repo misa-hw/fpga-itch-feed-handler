@@ -168,7 +168,8 @@ Four layers, each checked against the one above:
    event is compared with the reference by MoldUDP64 sequence number, and
    latency is measured per message.
 
-Bugs found by this process, all before hardware:
+Bugs found by this process before hardware (the board found three more; see
+§9):
 - The MoldUDP64 message count used the wrong register byte. This was
   invisible below 256 messages per packet, and caught by the end-of-session
   marker 0xFFFF in a directed test.
@@ -230,3 +231,46 @@ at 92.65 MHz, so that extra pipeline stage was removed.
   - **BRAM:** reset does not clear BRAM, so the order book zeroes its tables
     (4,096 cycles) in an `Init` state after every reset.
   - **PHY:** held in reset for about 20 ms after configuration or KEY0.
+    RX_CLK comes from the PHY and can stop or glitch meanwhile, so the
+    receive domain is held in clear for the whole PHY reset and 256 clean
+    RX_CLK cycles after it (`Board_top.rx_domain_clear`).
+
+## 9. Board bring-up: what simulation did not catch
+
+The first physical replay decoded every frame and learned all eight locate
+codes, but the book processed no commands. Every simulation passed: RTL in
+Cyclesim and Verilator, and even the synthesized netlist. The investigation
+separated the layers one at a time:
+
+1. **Gate-level simulation** (`fpga/netlist_sim/`): the yosys netlist,
+   simulated with two independent clocks and MII stimulus. yosys's
+   `cells_sim.v` declares RAMB18E1/RAMB36E1 as timing shells with no memory
+   behaviour, so they are replaced with Vivado's functional unisim models.
+   Without that, every BRAM read returns 0, which briefly looked like a
+   synthesis bug. A plain Verilog RAM run through the same flow is the
+   control that exposed this. With functional models the netlist matched the
+   model exactly, so logic synthesis was correct.
+2. **On-chip self-test** (`SELFTEST_PCAP=... fpga/build_board.sh`): the test
+   frames are stored in a ROM and played into the pipeline after reset, so
+   the silicon is tested over JTAG and UART with no PHY, cable or network
+   setup. It reproduced the fault. New counters showed that 97 commands
+   reached the book's FIFO (`fcmd`, `fmax`) and none left it, with the state
+   machine at code 0 (`bst`).
+3. **BRAM probe** (`src/hw/bram_probe.ml`): memories of exactly the order-
+   and level-bank shapes, written and read back on the 50 MHz clock only.
+   Two separate toolchain problems showed up:
+   - **Re-encoded FSMs do not run on this board.** yosys extracts state
+     registers (including plain 2- and 3-bit registers that only take
+     constant values) and re-encodes them as one-hot. With this flow they
+     never left their reset state on silicon, even with a power-on clear.
+     All builds now mark every wire `fsm_encoding="none"` before synthesis.
+   - **RAMB36E1 in 4K x 9 mode reads back wrong.** A 4,096-deep, 284-bit
+     order bank maps to 32 RAMB36E1 in TDP 4K x 9 mode. On the board, half
+     of the addresses (every odd address) came back with a parity-position
+     bit wrong. The 2,048-deep level-bank shape (RAMB18E1, 2K x 9) was
+     perfect. Tables deeper than 2,048 rows are now built from 2,048-deep
+     pieces, with a registered read-side select. BRAM use is unchanged.
+
+The self-test then matched the model on silicon: 97 commands, 95 live
+orders, 84 levels, no kicks, and the change count and hash `6debb1d9` equal
+to `pcapgen expect` (`results/board_selftest.txt`).

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Build a volatile SRAM bitstream for the Wukong XC7A100T. Does not program it.
 set -euo pipefail
+# FSM extraction is disabled (fsm_encoding="none" on every wire): state
+# registers that yosys re-encoded as one-hot never ran on the board with this
+# flow, even with a power-on reset (found with src/hw/bram_probe.ml).
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 eval "$(opam env --switch=oxcaml)"
 source /opt/openxc7/export.sh
@@ -11,6 +14,10 @@ case "$target_mhz" in
   *) echo 'TARGET_MHZ must be 50 or 125' >&2; exit 2 ;;
 esac
 stem="$b/board_top_${target_mhz}"
+# SELFTEST_PCAP=file: frames from that pcap are played from an on-chip ROM
+# instead of the PHY (100 Mb/s build only); the bitstream gets a _selftest suffix
+selftest="${SELFTEST_PCAP:-}"
+if [[ -n $selftest ]]; then stem="${stem}_selftest"; fi
 mkdir -p "$b"
 cp fpga/wukong.xdc "$stem.xdc"
 if [[ $target_mhz == 50 ]]; then
@@ -25,8 +32,12 @@ if [[ ! -s $b/xc7a100tfgg676.bin ]]; then
   cp "$tutorial_chipdb" "$b/xc7a100tfgg676.bin"
 fi
 dune build ./bin/gen_verilog.exe
-./_build/default/bin/gen_verilog.exe "$top_kind" "$stem.v"
-yosys -q -l "$stem.yosys.log" -p "read_verilog $stem.v; synth_xilinx -flatten -abc9 -arch xc7 -top board_top; stat; write_json $stem.json"
+if [[ -n $selftest ]]; then
+  ./_build/default/bin/gen_verilog.exe board_top_selftest "$selftest" "$stem.v"
+else
+  ./_build/default/bin/gen_verilog.exe "$top_kind" "$stem.v"
+fi
+yosys -q -l "$stem.yosys.log" -p "read_verilog $stem.v; setattr -set fsm_encoding \"none\" w:*; synth_xilinx -flatten -abc9 -arch xc7 -top board_top; stat; write_json $stem.json"
 if grep -qi 'self-resetting' "$stem.yosys.log"; then
   echo 'ERROR: self-resetting FSM in synthesized design' >&2
   exit 1

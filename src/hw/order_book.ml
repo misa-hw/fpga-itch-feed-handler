@@ -68,6 +68,8 @@ module Stats = struct
     ; levels : 'a [@bits 20]
     ; fifo_overflows : 'a [@bits 32]
     ; fifo_max_used : 'a [@bits 16]
+    ; debug_state : 'a [@bits 8] (* state machine's current state, for board bring-up *)
+    ; debug_fifo_empty : 'a
     }
   [@@deriving hardcaml]
 end
@@ -282,23 +284,44 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
   let a_shares = var_reg ~w:shares_bits () in
   let tob_before = var_reg ~w:128 () in
   (* ---- memories ---- *)
+  (* Memories deeper than [max_bram_depth] are built from 2048-deep pieces:
+     on the openXC7 flow, a 4096-deep table is mapped to RAMB36E1 in 4K x 9
+     mode, whose parity bits read back wrong on odd addresses on silicon
+     (found with src/hw/bram_probe.ml), while 2K x 9 RAMB18E1 is correct.
+     The piece is selected by the top address bits; the read-side selection
+     is registered with the read enable, so the output still holds between
+     reads exactly like a single RAM. *)
+  let max_bram_depth = 2048 in
   let mem ~name ~depth ~width =
+    let ab = Int.ceil_log2 depth in
     let r_en = Variable.wire ~default:gnd () in
-    let r_addr = Variable.wire ~default:(zero (Int.ceil_log2 depth)) () in
+    let r_addr = Variable.wire ~default:(zero ab) () in
     let w_en = Variable.wire ~default:gnd () in
-    let w_addr = Variable.wire ~default:(zero (Int.ceil_log2 depth)) () in
+    let w_addr = Variable.wire ~default:(zero ab) () in
     let w_data = Variable.wire ~default:(zero width) () in
-    let q =
+    let pieces = Int.max 1 (depth / max_bram_depth) in
+    let piece_depth = depth / pieces in
+    let pb = Int.ceil_log2 piece_depth in
+    let low a = sel_bottom a ~width:pb in
+    let high a = if pieces = 1 then gnd else drop_bottom a ~width:pb in
+    let q_of k =
       ram_rbw
-        ~name
+        ~name:(if pieces = 1 then name else sprintf "%s_%d" name k)
         ~write_port:
           { write_clock = i.clock
-          ; write_address = w_addr.value
-          ; write_enable = w_en.value
+          ; write_address = low w_addr.value
+          ; write_enable = w_en.value &: (high w_addr.value ==:. k)
           ; write_data = w_data.value
           }
-        ~read_port:{ read_clock = i.clock; read_address = r_addr.value; read_enable = r_en.value }
-        depth
+        ~read_port:{ read_clock = i.clock; read_address = low r_addr.value; read_enable = r_en.value }
+        piece_depth
+    in
+    let q =
+      if pieces = 1
+      then q_of 0
+      else (
+        let sel = reg spec ~enable:r_en.value (high r_addr.value) in
+        mux sel (List.init pieces ~f:q_of))
     in
     (r_en, r_addr, w_en, w_addr, w_data), q
   in
@@ -874,6 +897,8 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
       ; levels = st_levels.value
       ; fifo_overflows
       ; fifo_max_used
+      ; debug_state = uresize sm.current ~width:8
+      ; debug_fifo_empty = fifo.empty
       }
   }
 ;;

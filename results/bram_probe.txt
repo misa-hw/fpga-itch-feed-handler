@@ -1,0 +1,13 @@
+On-board block RAM probe (src/hw/bram_probe.ml, fpga/build_bram_probe.sh)
+B0 = 4096 x 284 (order-bank shape), B1 = 2048 x 276 (level-bank shape).
+n = words checked, err = words wrong, then the first wrong address/data.
+
+Default synthesis (yosys re-encodes the probe's phase registers as one-hot):
+B0 n=00000000 err=00000000 ...  B1 n=00000000 err=00000000 ...
+  -> the checkers never ran
+
+FSM extraction disabled (setattr -set fsm_encoding "none" w:*):
+B0 n=00001000 err=00000800 addr=0001 got=cb9c4001 want=cb9e4001  B1 n=00000800 err=00000000 addr=0000 got=00000000 want=00000000
+  -> B0 (32 x RAMB36E1, TDP 4K x 9): every odd address wrong, bit 17 (a
+     parity position of the x9 slices); B1 (31 x RAMB18E1, TDP 2K x 9): correct.
+  Gate-level simulation of the same netlist with Vivado unisim models: correct.

@@ -114,11 +114,32 @@ the MII variant and constrains the 25 MHz receive and 50 MHz UART clocks.
 The board testbench feeds frames with FCS in both modes and compares the UART
 stream to the model. The [physical idle test](results/board_idle.txt)
 programmed the MII bitstream over JTAG and captured complete UART status
-lines with zero error counters. Physical cable replay and comparison remain
-to be recorded. On the first cable attempt, NetworkManager restarted DHCP
-and removed the temporary host address before replay could send a packet;
-the script now checks the address and negotiated 100 Mb/s link before and
-after programming.
+lines with zero error counters.
+
+**On silicon, the feed handler core matches the model.** An on-chip self-test
+bitstream plays 108 real frames from a ROM into the pipeline, with no PHY,
+cable or network configuration. Its UART status reports 97 book commands and
+the model's exact change count and hash (`6debb1d9`). The printed event lines
+are an ordered subsequence of the model's
+([`results/board_selftest.txt`](results/board_selftest.txt)). Getting there
+took three fixes that no simulation could show: the receive domain is now
+held in reset while the PHY resets, yosys FSM re-encoding is disabled, and
+4,096-deep tables are built from 2,048-deep BRAMs. See
+[DESIGN.md section 9](DESIGN.md#9-board-bring-up-what-simulation-did-not-catch)
+and [`results/bram_probe.txt`](results/bram_probe.txt).
+
+```bash
+SELFTEST_PCAP=build/board_subset.pcap TARGET_MHZ=50 ./fpga/build_board.sh
+openFPGALoader-xpcu -c xilinxPlatformCableUsb fpga/build/board_top_50_selftest.bit
+./fpga/netlist_sim/run.sh selftest   # the same netlist in gate-level simulation
+```
+
+The first direct-cable replay (before these fixes) accepted all 400 frames
+with no FCS errors and decoded all 403 messages, but the book processed none;
+the self-test reproduced and localised that. On an earlier attempt,
+NetworkManager restarted DHCP and removed the temporary host address before
+replay could send a packet; the script now checks the address and negotiated
+100 Mb/s link before and after programming.
 For a direct cable from the Wukong to `eno1`, swap the PC's LAN cable for the
 Wukong cable. [NetworkManager can temporarily stop managing an interface](https://networkmanager.dev/docs/admins/),
 which keeps it from replacing the static address when the link changes.
@@ -154,4 +175,7 @@ raw-socket privilege or `tcpreplay` package is needed. It sends the first
 - Order references are limited to 32 bits, shares to 24 bits per order, and
   capacity to the selected eight symbols. Unsupported values are counted.
 - A 2,048-row level scan causes the long latency tail when a cache empties.
+- openXC7 workarounds, found on the board: yosys FSM extraction is disabled
+  in every build, and no BRAM table is deeper than 2,048 rows (RAMB36E1 in
+  4K x 9 mode read back wrong).
 - The sample prefix is not a complete trading day.

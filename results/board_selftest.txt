@@ -1,0 +1,24 @@
+On-board self-test (QMTech Wukong XC7A100T, 100 Mb/s MII build, 2026-09-30)
+
+Bitstream: SELFTEST_PCAP=build/board_subset.pcap TARGET_MHZ=50 ./fpga/build_board.sh
+  build/board_subset.pcap = packets 0-7 and 300-399 of build/board_slow.pcap
+  (108 frames: the 8 stock directory packets and all 96 Adds + 1 Delete)
+Frames are played from an on-chip ROM 2^20 RX_CLK cycles after reset; no PHY
+traffic, cable or network configuration. Programmed with openFPGALoader over
+JTAG; UART read at 115200 baud.
+
+Final status line:
+S1 frm=0000006c acc=0000006c flt=00000000 err=00000000 fcs=00000000 msg=0000006c gap=00000001 dup=00000000 cmd=00000061 chg=00000027 hash=6debb1d9 lost=00000005 kick=00000000 rfl=00000000 ovf=00000000 ord=0000005f lvl=00000054 map=ff blen=00000000 dord=00000061 fcmd=00000061 fmax=00000001 uns=00000000 bst=01 bfe=1 clk=01a1df12
+
+Model (./_build/default/bin/pcapgen.exe expect build/board_subset.pcap -summary):
+chg=00000027 hash=6debb1d9
+
+chg and hash equal the model. cmd=0x61 (97 commands), ord=0x5f, lvl=0x54,
+kick=0: identical to RTL and gate-level simulation. The 34 event lines that
+the UART printed are an ordered subsequence of the model's 39; lost=5 lines
+were dropped by the 31-entry display FIFO because the ROM plays faster than
+115200 baud (the hash is computed before that FIFO and covers every change).
+
+Before the fixes described in DESIGN.md section 9, the same test showed:
+  cmd=0 fcmd=0x61 fmax=0x61 bst=0x00        (FSM re-encoded by yosys, stuck)
+  cmd=0x61 chg=0x2f hash=33a13589 kick=0x60  (4K x 9 RAMB36E1 read errors)
