@@ -195,7 +195,9 @@ Five layers, each checked against the one above:
 5. **Board at 1 Gb/s** (`scripts/board_linerate.sh`): the pcap over a cable.
    The board's change count and CRC-32 over every change must equal the
    reference book's on the frames that actually left the PC, recorded with
-   tcpdump, because the PC drops and reorders frames at speed. The same
+   tcpdump, because the PC drops and reorders frames at speed. At 60,000
+   frames/s it sends them in order, and the board produced all 1,043,727
+   changes of the dataset with the reference's hash. The same
    counter comparison is what showed that: running the hardware's MoldUDP64
    rule over the PC's real sending order reproduced the board's 44,115
    duplicates and 2,711 gaps exactly.

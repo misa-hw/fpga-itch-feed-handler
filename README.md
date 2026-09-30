@@ -90,7 +90,7 @@ separately.
 | Core openXC7 routed Fmax | 78.59 MHz (93.36 MHz before the board workarounds); not trustworthy on silicon, see below |
 | Core logic cells estimated by Yosys | 13,023 |
 | Core block RAM | 67 RAMB36 + 62 RAMB18 |
-| 1 Gb/s board, full replay over a cable | 1,655,466 frames sent, all matched ([details](results/board_gigabit.txt)) |
+| 1 Gb/s board, full dataset over a cable | 1,043,727 changes, hash equal to the reference ([details](results/board_gigabit.txt)) |
 | 1 Gb/s board image, Vivado | met: WNS +0.009 ns; GMII inputs +0.44 / +0.45 ns setup / hold |
 | 100 Mb/s board routed Fmax | 94.23 MHz receive / 111.92 MHz UART; 25 / 50 MHz targets met |
 
@@ -134,27 +134,29 @@ processes 97 book commands, and prints 39 top-of-book changes identical to
 the OCaml model's, with the same on-chip change count and hash (`6debb1d9`)
 ([`results/board_cable_vivado.txt`](results/board_cable_vivado.txt)).
 
-**At 1 Gb/s, the board matches the reference book on every frame the PC
-sent.** The gigabit image replays all 1,655,589 frames of the tracked pcap
-over a direct 1000 Mb/s link: 1,655,466 frames reached the wire, and the
-board's frame, message, duplicate and gap counters, its 2,948 top-of-book
-changes and their CRC-32 hash (`6e0f8b00`) equal the reference book's on
-exactly that stream, with no FCS errors, frame errors or overflows
-([`results/board_gigabit.txt`](results/board_gigabit.txt)). "Exactly that
-stream" matters: at top speed the PC itself drops and reorders frames before
-they reach the NIC (123 dropped and 65,262 out of order in this run), which
-tcpreplay reports as sent. The test therefore records the frames leaving the
-host with tcpdump, rebuilds them in that order, and runs the reference book on
-them with the hardware's MoldUDP64 rule (a late message is a duplicate); that
-rule alone reproduces the board's duplicate and gap counters in every run.
-The first 100,000 frames at 20,000 frames/s arrive in order and give 56,196
-changes, all matching. Capturing the GMII bytes at 125 MHz needed the
-7-series source-synchronous scheme: a BUFIO-clocked input register behind a
-26-tap IDELAY on every data pin, which Vivado times against the RTL8211EG's
-datasheet window with +0.44 ns setup and +0.45 ns hold margin
-([DESIGN.md section 8](DESIGN.md#8-clocking-and-reset-on-the-board)). The
-average rate was 99.5 Mb/s, the limit of this PC's sender; frames reached
-the NIC as little as 0.95 us apart.
+**Over a 1 Gb/s link, the board reproduces the whole dataset.** The
+gigabit image received the tracked pcap over a direct 1000 Mb/s cable at
+60,000 frames/s: 1,655,585 of its 1,655,589 frames (the PC dropped the last
+four), 1,752,942 messages, no duplicates, gaps, FCS errors or overflows. The
+board's on-chip count and CRC-32 hash of every top-of-book change,
+1,043,727 changes and `186f6e17`, are exactly the reference book's for the
+complete pcap, and the Verilator replay's
+([`results/board_gigabit.txt`](results/board_gigabit.txt)).
+
+At top speed (132,000 frames/s, 99.5 Mb/s on average, frames reaching the
+NIC as little as 0.95 us apart) the PC itself drops and reorders frames
+before they reach the NIC (123 dropped and 65,262 out of order over the
+whole pcap), and tcpreplay still reports them as sent. The test therefore
+records the frames leaving the host with tcpdump, rebuilds them in that
+order, and runs the reference book on them with the hardware's MoldUDP64
+rule (a late message is a duplicate). The board matches it exactly there
+too: 729,207 duplicates, 45,278 gaps, 2,948 changes, hash `6e0f8b00`.
+
+Capturing the GMII bytes at 125 MHz needed the 7-series source-synchronous
+scheme: a BUFIO-clocked input register behind a 26-tap IDELAY on every data
+pin, which Vivado times against the RTL8211EG's datasheet window with
++0.44 ns setup and +0.45 ns hold margin
+([DESIGN.md section 8](DESIGN.md#8-clocking-and-reset-on-the-board)).
 
 **On silicon, the feed handler core matches the model.** An on-chip self-test
 bitstream plays 108 real frames from a ROM into the pipeline, with no PHY,
@@ -237,9 +239,9 @@ raw-socket privilege or `tcpreplay` package is needed. It sends the first
 - There is no MoldUDP64 retransmission client or gap recovery; duplicates
   and sequence gaps are counted.
 - The 1 Gb/s board test is limited by its sender: this PC averages about
-  100 Mb/s with tcpreplay and drops and reorders frames at that speed. The
-  board is checked against what was actually sent, not against the pcap;
-  sustained 1 Gb/s traffic has only been simulated.
+  100 Mb/s with tcpreplay, and drops and reorders frames above about
+  60,000 frames/s, so the board is checked against what was actually sent.
+  Sustained 1 Gb/s traffic has only been simulated.
 - FCS, IP and UDP checksums do not gate cut-through book writes. The MAC
   counts bad FCS for diagnostics.
 - Order references are limited to 32 bits, shares to 24 bits per order, and

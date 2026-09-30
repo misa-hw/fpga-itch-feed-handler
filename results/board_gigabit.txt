@@ -34,15 +34,29 @@ The sender does not send the pcap faithfully at speed. At the kernel's
 transmit tap it drops frames and reorders others (interleaved runs about
 1,900 frames apart), with the default fq_codel qdisc and with a FIFO; the
 NIC has one transmit queue. tcpreplay counts those frames as sent.
-  rate           frames sent    dropped    out of order
-  20,000 pps     99,997/100k    3          0
-  top speed      99,272/100k    728        3,912
+  rate           frames sent            dropped    out of order
+  20,000 pps     99,997 of 100,000      3          0
+  60,000 pps     1,655,585 of all       4 (last)   0
+  top speed      99,272 of 100,000      728        3,912
+  top speed      1,655,466 of all       123        65,262
 Running the hardware's MoldUDP64 rule over the captured order reproduces
 the board's duplicate and gap counters exactly in every run, so the board
 received exactly what was sent. (Before this was known, a comparison with
 the unmodified pcap failed: 715,441 duplicates at top speed.)
 
 Runs, board == reference book on the sent stream:
+  all 1,655,589 frames at 60,000 pps: PASS (results/board_linerate_60k.*)
+    tcpreplay: 27.59 s, 45.2 Mb/s; tcpdump: 1,655,585 captured, 0 dropped
+    sender: the last 4 frames dropped, 0 out of order
+    board and model: 1,655,585 frames, 1,752,942 messages, 0 duplicates,
+    0 gaps, 1,043,727 changes, hash 186f6e17
+    0 FCS errors, 0 frame errors, 0 overflows, book FIFO peak 9;
+    243,441 kicks, 5,042 refills
+    The change count and hash are also the reference book's for the whole
+    pcap (pcapgen expect build/tracked.pcap: chg=000fed0f hash=186f6e17):
+    the 4 dropped frames changed no tracked top of book. Every one of the
+    dataset's 1,043,727 top-of-book changes came out of the board, identical
+    to the reference and to the Verilator replay.
   first 100,000 frames at 20,000 pps: PASS
     99,997 frames, 102,078 messages, 0 duplicates, 0 gaps,
     56,196 changes, hash 4527e808
