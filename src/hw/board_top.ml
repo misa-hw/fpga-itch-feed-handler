@@ -74,7 +74,10 @@ let rx_domain_clear ~clock ~reset_n ~phy_ready =
   let settled =
     reg_fb r ~width:9 ~f:(fun c -> mux2 ~:ready (zero 9) (mux2 (msb c) c (c +:. 1)))
   in
+  (* this reset reaches most of the receive domain's flip-flops: let Vivado
+     replicate it next to its loads *)
   reg r (domain_clear ~clock ~reset_n |: ~:(msb settled))
+  |> Fn.flip Signal.add_attribute (Rtl_attribute.Vivado.max_fanout 64)
 ;;
 
 let event_bits = 32 + 8 + (4 * 32)
@@ -193,6 +196,14 @@ let create
     Feed_handler.create scope { clock = rxc; clear = clear_rx; cfg = Timing_top.config (); rx }
   in
   let ev = fh.event in
+  (* latency of every book command, from its message's last byte on the MAC
+     stream to its event (the simulation's definition) *)
+  let lat =
+    Latency_monitor.hierarchical
+      ~offset:Feed_handler.command_offset
+      scope
+      { clock = rxc; clear = clear_rx; cmd = fh.cmd; event = ev.valid }
+  in
   let change = ev.valid &: ev.changed in
   let word = event_word ev in
   let ev_hash = reg_fb rs ~width:32 ~f:(fun h -> mux2 change (Crc32.next ~crc:h ~data:word) h) in
@@ -249,6 +260,12 @@ let create
     ; "bst", uresize c.book.debug_state ~width:8
     ; "bfe", uresize c.book.debug_fifo_empty ~width:4
     ; "clk", rx_cycles
+      (* latency in 125 MHz cycles: samples, p50, p99, p99.9, max *)
+    ; "lat", lat.stats.count
+    ; "l50", uresize lat.stats.p50 ~width:16
+    ; "l99", uresize lat.stats.p99 ~width:16
+    ; "l999", uresize lat.stats.p999 ~width:16
+    ; "lmax", lat.stats.max
     ]
   in
   let snap = List.map counters ~f:(fun (name, s) -> name, reg rs ~enable:take s) in

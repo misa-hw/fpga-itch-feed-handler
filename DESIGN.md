@@ -218,6 +218,12 @@ Five layers, each checked against the one above:
    whole pipeline at the minimum inter-frame gap (and an 8-byte gap, and a
    5-byte preamble).
 5. **Board at 1 Gb/s** (`scripts/board_linerate.sh`): the pcap over a cable.
+   The board also measures the latency of every command on chip
+   (`src/hw/latency_monitor.ml`): a timestamp FIFO beside the book's command
+   FIFO pairs each command with its event, a block-RAM histogram collects
+   the samples, and a hardware scanner publishes the percentiles with the
+   Verilator replay's exact definition (checked per sample in
+   `tests/hw/test_latency.ml`).
    The board's change count and CRC-32 over every change must equal the
    reference book's on the frames that actually left the PC, recorded with
    tcpdump, because the PC drops and reorders frames at speed. At 60,000
@@ -246,11 +252,14 @@ Bugs found by this process before hardware (the board found three more; see
 ## 7. Timing
 
 **The core meets 125 MHz with Vivado** (`fpga/vivado_build.sh` on
-`src/hw/timing_top.ml`: WNS +0.021 ns with synthesis retiming,
+`src/hw/timing_top.ml`: WNS +0.095 ns with synthesis retiming,
 ExtraTimingOpt placement and AggressiveExplore physical optimisation and
 routing), using 23% of the LUTs and 73% of the block RAM. The 1 Gb/s board
-image, which adds the MAC, the GMII capture, the UART and the counters,
-meets it too (WNS +0.009 ns). The background refill needed two register
+image, which adds the MAC, the GMII capture, the latency monitor, the UART
+and the counters, meets it too (WNS +0.045 ns). The refill tournament
+computes each node's runner-up (the largest of two runners-up and the
+loser) with all comparisons in parallel; as two chained compare-and-selects
+it was the board image's critical path. The background refill needed two register
 stages to close: the sorter eviction is registered before it joins the
 discard maximum, and the merge decision (which scan entries survive, and
 whether they beat the cache) is registered before it drives the LUT-RAM

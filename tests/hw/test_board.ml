@@ -146,14 +146,16 @@ let replay_real_pcap ~mii_mode =
        let e_lines = List.filter lines ~f:(String.is_prefix ~prefix:"E ") in
        let status =
          List.filter lines ~f:(fun line ->
-           String.is_prefix line ~prefix:"S" && Option.is_some (status_field line "lost"))
+           (* complete lines only: the run can end in the middle of one *)
+           String.is_prefix line ~prefix:"S" && Option.is_some (status_field line "lmax"))
          |> List.last_exn
        in
        (* silent when everything matches (so the test also passes without
           the sample data, like every data-dependent test here): all event
           lines equal the model's, all 400 frames accepted, the corrupted
-          frame counted as the one FCS error, and the on-chip change count
-          and hash equal the model's *)
+          frame counted as the one FCS error, the on-chip change count and
+          hash equal the model's, and the latency monitor measured every
+          book command *)
        let f name = Option.value_exn (status_field status name) in
        let ok =
          [%equal: string list] e_lines (Queue.to_list expected)
@@ -164,6 +166,9 @@ let replay_real_pcap ~mii_mode =
          && String.equal (f "chg") (sprintf "%08x" (Queue.length expected))
          && String.equal (f "hash") (sprintf "%08x" !hash)
          && String.equal (f "lost") "00000000"
+         (* the latency monitor measured every book command *)
+         && String.equal (f "lat") (f "cmd")
+         && not (String.equal (f "lat") "00000000")
        in
        if not ok
        then (

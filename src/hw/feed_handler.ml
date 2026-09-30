@@ -51,9 +51,15 @@ module O = struct
     ; counters : 'a Counters.t [@rtlmangle "_"]
     ; msg_last : 'a (* a message's last byte is in the decoder this cycle *)
     ; msg_seq : 'a [@bits 64]
+    ; cmd : 'a (* a book command enters the book's FIFO (Latency_monitor) *)
     }
   [@@deriving hardcaml]
 end
+
+(* Cycles from a message's last byte on [rx] to its command on [cmd]: the
+   fixed pipeline in front of the book. Latency_monitor adds it so its
+   samples are the latency defined above (tests/hw/test_latency.ml). *)
+let command_offset = 5
 
 let create ?p ?fifo_capacity scope (i : _ I.t) : _ O.t =
   let spec = Reg_spec.create ~clock:i.clock ~clear:i.clear () in
@@ -93,5 +99,6 @@ let create ?p ?fifo_capacity scope (i : _ I.t) : _ O.t =
       }
   ; msg_last = front.msg.valid &: front.msg.last
   ; msg_seq = front.msg.seq
+  ; cmd = filter.cmd.valid
   }
 ;;

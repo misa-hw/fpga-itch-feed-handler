@@ -503,8 +503,21 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
   let combine ((bv1, bk1, bp1, bs1), s1) ((bv2, bk2, bp2, bs2), s2) =
     let first = bv1 &: (~:bv2 |: (bk1 >: bk2)) in
     let best = mux2 first bv1 bv2, mux2 first bk1 bk2, mux2 first bp1 bp2, mux2 first bs1 bs2 in
-    let loser = mux2 first bv2 bv1, mux2 first bk2 bk1 in
-    best, vmax (vmax s1 s2) loser
+    (* the runner-up is the largest of s1, s2 and the loser. As two
+       chained [vmax]es behind [first] that was three carry chains in a
+       row; instead every comparison is made in parallel on the node's
+       inputs (the loser is bk1 or bk2) and only selection follows. Keys
+       that tie are equal, so either choice is right. *)
+    let (sv1, sk1), (sv2, sk2) = s1, s2 in
+    let lv = mux2 first bv2 bv1
+    and lk = mux2 first bk2 bk1 in
+    let beats xv yv x_gt_y = xv &: (~:yv |: x_gt_y) in
+    let s1_over_s2 = beats sv1 sv2 (sk1 >: sk2) in
+    let s1_over_l = beats sv1 lv (mux2 first (sk1 >: bk2) (sk1 >: bk1)) in
+    let s2_over_l = beats sv2 lv (mux2 first (sk2 >: bk2) (sk2 >: bk1)) in
+    let pick_s1 = s1_over_s2 &: s1_over_l in
+    let runner_up = sv1 |: sv2 |: lv, mux2 pick_s1 sk1 (mux2 s2_over_l sk2 lk) in
+    best, runner_up
   in
   let reg_node ((bv, bk, bp, bs'), (sv, sk)) =
     (reg spec bv, reg spec bk, reg spec bp, reg spec bs'), (reg spec sv, reg spec sk)

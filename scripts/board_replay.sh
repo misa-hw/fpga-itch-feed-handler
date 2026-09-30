@@ -63,7 +63,7 @@ status = [line for line in board if line.startswith("S") and " hash=" in line]
 if not status:
     sys.exit("no board status line captured")
 line = status[-1]
-fields = dict(re.findall(r"\b([a-z]+)=([0-9a-fA-F]+)", line))
+fields = dict(re.findall(r"\b([a-z][a-z0-9]*)=([0-9a-fA-F]+)", line))
 actual = {key: fields[key] for key in ("chg", "hash") if key in fields}
 want = dict(re.findall(r"\b(chg|hash)=([0-9a-fA-F]+)", model[-1]))
 board_events = [entry for entry in board if entry.startswith("E ")]

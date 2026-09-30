@@ -91,13 +91,17 @@ status = [line for line in board if line.startswith("S") and " hash=" in line]
 if not status:
     sys.exit("no board status line captured")
 line = status[-1]
-b = {k: int(v, 16) for k, v in re.findall(r"\b([a-z]+)=([0-9a-fA-F]+)", line)}
+b = {k: int(v, 16) for k, v in re.findall(r"\b([a-z][a-z0-9]*)=([0-9a-fA-F]+)", line)}
 print("last board status:", line)
 print(f"sender: {sent['sent']} of {sent['original']} frames left the host, "
       f"{sent['missing']} dropped, {sent['reordered']} out of order")
 print(f"board:  {b.get('acc')} frames accepted, {b.get('msg')} messages, {b.get('dup')} duplicates, "
       f"{b.get('gap')} gaps, {b.get('chg')} changes (hash {b.get('hash', 0):08x}), "
       f"{b.get('lost')} UART lines dropped, book FIFO peak {b.get('fmax')}")
+if "lat" in b:
+    print(f"latency on the board, 125 MHz cycles from a message's last byte on the MAC stream to its event, "
+          f"{b['lat']} commands: p50 {b['l50']}, p99 {b['l99']}, p99.9 {b['l999']}, max {b['lmax']} "
+          f"(ns: {8 * b['l50']}, {8 * b['l99']}, {8 * b['l999']}, {8 * b['lmax']}; a percentile of 1023 means 1023 or more)")
 print(f"model on the sent stream: {sent['msg']} messages, {sent['dup']} duplicates, {sent['gap']} gaps, "
       f"{want['chg']} changes (hash {want['hash']:08x})")
 bad = []
@@ -112,6 +116,8 @@ if b.get("acc") != sent["sent"]:
     bad.append(f"accepted {b.get('acc')} frames, the host sent {sent['sent']}")
 if (b.get("msg"), b.get("dup"), b.get("gap")) != (sent["msg"], sent["dup"], sent["gap"]):
     bad.append("MoldUDP64 counters differ from the sent stream's")
+if "lat" in b and b["lat"] != b.get("cmd"):
+    bad.append(f"the latency monitor saw {b['lat']} commands, the book processed {b.get('cmd')}")
 for key in ("fcs", "err", "ovf"):
     if b.get(key, -1):
         bad.append(f"{key}={b.get(key)}")

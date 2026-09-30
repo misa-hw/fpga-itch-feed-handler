@@ -20,6 +20,8 @@ trade-offs.
 - **Latency: 160 ns median, 248 ns at p99** (20 and 31 cycles at 125 MHz),
   from a message's last byte to its top-of-book event, measured on every
   one of the 1.74 million book commands in simulation; 41 cycles at p99.9.
+  The board image measures the same quantity on chip for every command
+  (below); that run on the board is still to be done.
 - **Timing closes at 125 MHz** in Vivado, for the core and for the gigabit
   board image, whose GMII inputs are constrained to the PHY datasheet's
   3 ns window.
@@ -99,8 +101,8 @@ MoldUDP64 packets (`build/tracked.pcap`).
 | Peak table occupancy | 27,573 / 32,768 orders; 7,633 / 16,384 levels |
 | Book FIFO peak | 25 / 512 commands |
 | Background cache refills | 4,905; commands waited 10,756 cycles in total |
-| Core at 125 MHz, Vivado ([`timing.txt`](results/timing.txt)) | met, WNS +0.021 ns; 14,582 LUTs (23%), 8,972 FFs (7%), 98 BRAM tiles (73%) |
-| 1 Gb/s board image, Vivado | met, WNS +0.009 ns; GMII inputs +0.44 / +0.45 ns setup / hold |
+| Core at 125 MHz, Vivado ([`timing.txt`](results/timing.txt)) | met, WNS +0.095 ns; 14,543 LUTs (23%), 8,983 FFs (7%), 98 BRAM tiles (73%) |
+| 1 Gb/s board image, Vivado | met, WNS +0.045 ns; GMII inputs +0.44 / +0.45 ns setup / hold |
 | 1 Gb/s board, whole dataset over a cable | 1,043,727 changes, count and hash equal to the reference |
 | 100 Mb/s board, cable and on-chip self-test | 39 changes, all equal to the model |
 
@@ -139,6 +141,17 @@ board matches it exactly: 1,655,466 frames, 729,207 duplicates, 45,278 gaps,
 2,948 changes, hash `6e0f8b00`. The same comparison is what showed that the
 sender, not the board, was reordering
 ([DESIGN.md section 10](DESIGN.md#10-the-1-gbs-test-when-the-counters-pointed-at-the-sender)).
+
+**Latency on chip.** The board image timestamps every book command as it
+enters the book and computes its latency when the command's event comes
+out (commands and events are one to one and in order), adding the fixed
+5-cycle pipeline in front of the book so a sample is exactly the
+simulation's latency. Samples go into a histogram in block RAM, which a
+scanner in hardware walks continuously to publish the count, p50, p99,
+p99.9 and maximum in the UART status line (`lat`, `l50`, `l99`, `l999`,
+`lmax`); `scripts/board_linerate.sh` prints them. Simulation checks every
+sample and every percentile against the definition used by the Verilator
+replay ([`tests/hw/test_latency.ml`](tests/hw/test_latency.ml)).
 
 **Receiving at 125 MHz.** The PHY guarantees each byte only from 2.5 ns
 before to 0.5 ns after its clock edge. The board image captures it with

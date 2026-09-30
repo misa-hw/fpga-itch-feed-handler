@@ -46,3 +46,12 @@ synth_design -retiming, ExtraTimingOpt place, AggressiveExplore phys_opt/route:
   Closing it took two register stages: the sorter eviction feeding the
   discard maximum (pe_v/pe_k), and the merge decision (Merge_cmp) that
   drives the LUT-RAM cache write enable.
+
+Refill tournament runner-up as a parallel three-way maximum (2026-10-01;
+two chained compare-and-selects before), same flow as above:
+  Core (Timing_top): WNS +0.095 ns, WHS +0.029 ns, 0 failing endpoints: MET
+  Utilization: 14,543 LUTs (22.9%), 8,983 registers (7.1%)
+  1 Gb/s board image with the latency monitor: WNS +0.045 ns, WHS +0.038 ns
+  (results/board_gigabit.txt)
+  Full Verilator replay after the change: identical to
+  results/verify_tracked.txt (same events, refills and latencies).

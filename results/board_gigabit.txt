@@ -77,3 +77,16 @@ Runs, board == reference book on the sent stream:
 
 Not shown: sustained 1 Gb/s. The link and the board's receive path run at
 1 Gb/s, but this host averages about 100 Mb/s with tcpreplay.
+
+Image with the on-chip latency monitor (src/hw/latency_monitor.ml),
+2026-10-01, same build command. Not yet run on the board; the runs above
+used the image without it.
+  All constraints met: WNS +0.045 ns, WHS +0.038 ns; GMII inputs unchanged
+  (+0.444 / +0.450 ns). 17,158 LUTs (27%), 12,339 registers (10%).
+  Closing it took: the monitor's constant multiplies as registered adder
+  trees; MAX_FANOUT 64 on the receive-domain reset (its fanout path was
+  7.3 ns of routing); and, in the order book, the refill tournament's
+  runner-up as a three-way maximum with parallel comparisons instead of two
+  chained ones (it failed by 0.211 ns once the monitor was added).
+  scripts/board_linerate.sh prints the board's latency (lat, l50, l99,
+  l999, lmax in 125 MHz cycles) and requires lat == cmd.
