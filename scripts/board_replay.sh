@@ -34,7 +34,8 @@ wait_100_link() {
   echo "$iface negotiated ${speed:-no} Mb/s; this bitstream requires a 100 Mb/s link" >&2
   return 1
 }
-wait_100_link
+# Program first: the PHY only brings the link up once a board image drives
+# its reset pin high (another bitstream, e.g. a probe, can hold it in reset).
 openFPGALoader-xpcu -c xilinxPlatformCableUsb "$bit"
 sleep 2
 if ! check_address; then
