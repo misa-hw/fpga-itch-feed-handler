@@ -1,5 +1,5 @@
 pcap: build/tracked.pcap (1655589 packets, 1752946 messages)
-simulator: Verilator, 188940055 cycles in 659 s (0.29 Mcycles/s)
+simulator: Verilator, 188940055 cycles in 700 s (0.27 Mcycles/s)
 symbols: QQQ,SPY,IWM,DIA,TQQQ,SQQQ,AMD,UVXY
 
 book commands: hardware 1740696, reference 1740696
@@ -8,15 +8,17 @@ mismatches: 0, missing hardware events: 0 (0 top changes)
 
 frames: 1655589 seen, 1655589 accepted, 0 filtered, 0 errors
 mold: 1655589 packets, 1752946 messages, 0 dups, 0 gaps, 0 malformed
-book: 0 unsupported, 0 order overflows, 0 level overflows, 243441 kicks (max 19 per insert), 1097 refills
-book: 27156 live orders, 7434 live levels, FIFO max 54 used, 0 FIFO overflows
+book: 0 unsupported, 0 order overflows, 0 level overflows, 243441 kicks (max 19 per insert), 4905 refills
+book: 27156 live orders, 7434 live levels, FIFO max 25 used, 0 FIFO overflows
+book: 10756 cycles spent waiting for a refill (a cache emptied before its background refill finished)
 
 latency, last byte on rx -> book event valid, in 125 MHz cycles (8 ns):
-  all (1740696): min 17  p50 20  p99 672  p99.9 2078  max 6016
-  A ( 821377): min 17  p50 17  p99 625  max 5640
-  C (    605): min 20  p50 20  p99 20  max 1487
-  D ( 773747): min 20  p50 20  p99 615  max 6016
-  E (  29960): min 20  p50 20  p99 2078  max 5823
-  F (   1642): min 17  p50 17  p99 29  max 1771
-  U ( 106366): min 28  p50 28  p99 827  max 5919
-  X (   6999): min 20  p50 20  p99 1698  max 5329
+  all (1740696): min 17  p50 20  p99 31  p99.9 41  max 2739
+  over 64 cycles: 117 commands (0.0067%), over 1000: 63
+  A ( 821377): min 17  p50 17  p99 29  max 2363
+  C (    605): min 20  p50 20  p99 20  max 20
+  D ( 773747): min 20  p50 20  p99 20  max 2739
+  E (  29960): min 20  p50 20  p99 20  max 2262
+  F (   1642): min 17  p50 17  p99 23  max 35
+  U ( 106366): min 28  p50 28  p99 40  max 76
+  X (   6999): min 20  p50 20  p99 20  max 1233

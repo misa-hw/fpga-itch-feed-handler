@@ -67,20 +67,26 @@ deliberately corrupted FCS.
 The strict full replay with the eight-level configuration is recorded in
 [`results/verify_tracked.txt`](results/verify_tracked.txt): 1,740,696
 hardware and reference book commands, 1,043,727 top-of-book changes, zero
-mismatches, missing events or overflows, and 1,097 cache refills. Median
-event latency was 20 cycles, p99 was 672, and the maximum was 6,016. The
-latency tail includes time spent queued behind refills. These are simulation
-results at a modeled 125 MHz receive clock; the routed board clock is
-measured separately.
+mismatches, missing events or overflows. Event latency, from the last byte
+of a message on the MAC stream to the book's event, was 20 cycles median,
+31 at p99, 41 at p99.9 and 2,739 at most; 117 commands (0.0067%) took more
+than 64 cycles. Cache refills run in the background, so a command waits only
+when its book side's cache empties before a refill finishes (10,756 cycles
+in the whole replay). With the earlier blocking refill
+([`results/verify_tracked_blocking.txt`](results/verify_tracked_blocking.txt))
+p99 was 672, p99.9 2,078 and the maximum 6,016. These are simulation results
+at a modeled 125 MHz receive clock; the routed board clock is measured
+separately.
 
 | Measured item | Result |
 | --- | ---: |
 | Peak live orders | 27,573 / 32,768 slots |
 | Peak live price levels | 7,633 / 16,384 slots |
-| FIFO maximum occupancy in full replay | 54 / 512 commands |
-| Cache refills in full replay | 1,097 |
-| Core at 125 MHz, **Vivado** | **met**: WNS +0.019 ns, hold met (aggressive directives) |
-| Core resources, Vivado | 12,274 LUTs (19%), 8,276 FFs (7%), 105.5 BRAM tiles (78%) |
+| Event latency, full replay (cycles) | p50 20, p99 31, p99.9 41, max 2,739 |
+| FIFO maximum occupancy in full replay | 25 / 512 commands |
+| Background cache refills in full replay | 4,905 (10,756 cycles waited) |
+| Core at 125 MHz, **Vivado** | **met**: WNS +0.021 ns, hold met (retiming, aggressive directives) |
+| Core resources, Vivado | 14,582 LUTs (23%), 8,972 FFs (7%), 98 BRAM tiles (73%) |
 | Core openXC7 routed Fmax | 78.59 MHz (93.36 MHz before the board workarounds); not trustworthy on silicon, see below |
 | Core logic cells estimated by Yosys | 13,023 |
 | Core block RAM | 67 RAMB36 + 62 RAMB18 |
@@ -194,7 +200,9 @@ raw-socket privilege or `tcpreplay` package is needed. It sends the first
   counts bad FCS for diagnostics.
 - Order references are limited to 32 bits, shares to 24 bits per order, and
   capacity to the selected eight symbols. Unsupported values are counted.
-- A 2,048-row level scan causes the long latency tail when a cache empties.
+- A command whose book side's cache empties before the background refill
+  finishes waits for the 2,048-row level scan: 63 commands of 1.74M waited
+  over 1,000 cycles.
 - openXC7 bitstreams failed at speed on the board although nextpnr reported
   2-4x timing margin ([`results/board_toolchains.txt`](results/board_toolchains.txt));
   the Vivado build of the same Verilog is correct. Board images are built

@@ -132,19 +132,41 @@ change to the design.
   events, 0 differences from the reference book.
 - **Cost of K:**
 
-  | K | refills in the dataset | cache storage (16 sides) |
+  | K | refills when a cache empties | cache storage (16 sides) |
   |---|---|---|
   | 4 | 4,731 | 4.2 Kb |
   | 8 | 1,097 | 8.3 Kb |
   | 16 | 191 | 16.6 Kb |
   | 32 | 31 | 33 Kb in LUT RAM |
 
-  A refill stalls the book for about 2,060 cycles (16 us at 125 MHz).
-  At K=8 that is 1,097 times in 1.74M commands. Commands queued behind
-  successive refills reached 6,016 cycles of end-to-end event latency.
-  The refill could run in the background, and the design supports it: the
-  cache stays valid while its best level is known, and the scan result merges
-  as a prefix. That would remove the tail entirely.
+  A blocking refill stalls the book for about 2,060 cycles (16 us at
+  125 MHz). At K=8 that happened 1,097 times in 1.74M commands, and commands
+  queued behind successive refills reached 6,016 cycles of end-to-end
+  latency (p99 672).
+
+- **Background refill.** The scan does not need to stop the book:
+  - It starts when a side's cache holds half its capacity (4 of 8) or less
+    while the side has more levels, so it usually finishes before the cache
+    runs dry.
+  - It reads the level table only between commands (Idle, Finish, Emit),
+    because a command relies on the BRAM output holding its row until it
+    writes it back. Rows in flight land in the sorter before the next
+    command's cache update.
+  - Every cache update of the side being scanned is also applied to the
+    sorter: an insert or size change updates it, an emptied level is
+    removed. A winner whose price is already in the sorter only updates it,
+    so a row read before and after a change cannot insert a level twice.
+  - The merge keeps the longer of the two prefixes (cache or scan result).
+    A command waits only when its side's cache is empty. If a scan was
+    already running then, its result can be empty too (it may have
+    discarded the levels that are now best), so the command starts a fresh
+    scan.
+  - On the full replay: 4,905 refills, 10,756 cycles in total that commands
+    spent waiting, p99 latency 31 cycles (was 672), p99.9 41 (was 2,078),
+    maximum 2,739 (was 6,016). Starting at 2 of 8 instead of 4 waited
+    36,411 cycles. The architectural model starts refills at the same point
+    but completes them at once; the property tests check that the RTL equals
+    it event by event with 0, 3 and 11 idle cycles between commands.
 
 ## 6. Verification strategy
 
@@ -210,10 +232,14 @@ the current Fmax.
 Registering the BRAM write port was also tried: the eight-level core routed
 at 92.65 MHz, so that extra pipeline stage was removed.
 
-**With Vivado, the core meets 125 MHz** (WNS +0.019 ns with
-ExtraTimingOpt placement and AggressiveExplore physical optimisation and
-routing; -0.628 ns with default directives), using 19% of the LUTs and 78%
-of the block RAM. That is the number to trust (see section 9). With openXC7,
+**With Vivado, the core meets 125 MHz** (WNS +0.021 ns with synthesis
+retiming, ExtraTimingOpt placement and AggressiveExplore physical
+optimisation and routing), using 23% of the LUTs and 73% of the block RAM.
+The background refill needed two more register stages to close: the sorter
+eviction is registered before it joins the discard maximum, and the merge
+decision (which scan entries survive, and whether they beat the cache) is
+registered before it drives the LUT-RAM cache write enable. The blocking
+design met 125 MHz with WNS +0.019 ns (-0.628 ns with default directives). That is the number to trust (see section 9). With openXC7,
 the board workarounds of section 9 (no FSM re-encoding, 2,048-deep BRAM
 pieces) cost timing: the core routes at 78.59 MHz. Its critical path,
 12.72 ns, still ends at a level-bank BRAM input and is 74% routing. The

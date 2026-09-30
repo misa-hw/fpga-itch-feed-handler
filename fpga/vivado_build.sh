@@ -5,6 +5,7 @@
 # RX_PERIOD_NS: 40 for the 100 Mb/s MII build (default), 8 for gigabit.
 # TOP=timing_top XDC=fpga/timing_top.xdc: the core timing wrapper instead of
 # the board (its XDC is used as is; no bitstream is needed but one is written).
+# SYNTH_OPTS: extra synth_design options (e.g. "-retiming").
 # PLACE_DIRECTIVE / PHYS_DIRECTIVE / ROUTE_DIRECTIVE: Vivado strategy
 # directives (default: Default); a post-route phys_opt runs if setup fails.
 set -euo pipefail
@@ -27,13 +28,14 @@ fi
 cat > "$out/build.tcl" <<TCL
 read_verilog $(realpath "$v")
 read_xdc $(realpath "$out")/board.xdc
-synth_design -top $top -part xc7a100tfgg676-1
+synth_design -top $top -part xc7a100tfgg676-1 ${SYNTH_OPTS:-}
 opt_design
 place_design -directive ${PLACE_DIRECTIVE:-Default}
 phys_opt_design -directive ${PHYS_DIRECTIVE:-Default}
 route_design -directive ${ROUTE_DIRECTIVE:-Default}
 if {[get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup]] < 0} { phys_opt_design -directive AggressiveExplore }
 report_timing_summary -file $(realpath "$out")/timing.rpt
+report_timing -max_paths 50 -nworst 1 -file $(realpath "$out")/paths.rpt
 report_utilization -file $(realpath "$out")/utilization.rpt
 write_bitstream -force $(realpath "$out")/$top.bit
 TCL

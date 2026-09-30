@@ -36,3 +36,13 @@ Core receive pipeline (Timing_top) at 125 MHz (1 Gb/s byte clock)
                105.5 BRAM tiles (78%: 104 RAMB36 + 3 RAMB18)
 100 Mb/s board image (MII, 25 MHz receive, 50 MHz UART): WNS +4.210 ns, hold met
 50 MHz self-test image (receive domain on the 50 MHz oscillator): WNS +6.779 ns
+
+Background refill (2026-09-30): the level-table scan runs between commands
+and merges into the cache as a prefix; a command waits only if its side's
+cache empties first. Vivado 2026.1, Timing_top at 125 MHz,
+synth_design -retiming, ExtraTimingOpt place, AggressiveExplore phys_opt/route:
+  WNS +0.021 ns, WHS +0.019 ns, 0 failing endpoints: MET
+  Utilization: 14,582 LUTs (23.0%), 8,972 registers (7.1%), 98 BRAM tiles (72.6%)
+  Closing it took two register stages: the sorter eviction feeding the
+  discard maximum (pe_v/pe_k), and the merge decision (Merge_cmp) that
+  drives the LUT-RAM cache write enable.

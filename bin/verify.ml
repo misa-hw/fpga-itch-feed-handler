@@ -208,9 +208,14 @@ let run ~pcap ~verilator ~max_packets ~symbols ~ifg ~report =
   pr "mold: %d packets, %d messages, %d dups, %d gaps, %d malformed" (g c.mold.packets) (g c.mold.messages) (g c.mold.duplicates) (g c.mold.gaps) (g c.mold.malformed);
   pr "book: %d unsupported, %d order overflows, %d level overflows, %d kicks (max %d per insert), %d refills" (g c.book.unsupported) (g c.book.order_overflows) (g c.book.level_overflows) (g c.book.kicks) (g c.book.max_kicks) (g c.book.refills);
   pr "book: %d live orders, %d live levels, FIFO max %d used, %d FIFO overflows" (g c.book.orders) (g c.book.levels) (g c.book.fifo_max_used) (g c.book.fifo_overflows);
+  pr "book: %d cycles spent waiting for a refill (a cache emptied before its background refill finished)" (g c.book.refill_stall_cycles);
   pr "";
   pr "latency, last byte on rx -> book event valid, in 125 MHz cycles (8 ns):";
   pr "  all (%d): min %d  p50 %d  p99 %d  p99.9 %d  max %d" (Array.length lat) (percentile lat 0) (percentile lat 50) (percentile lat 99) (if Array.length lat > 0 then lat.(Int.min (Array.length lat - 1) (999 * Array.length lat / 1000)) else 0) (if Array.length lat > 0 then lat.(Array.length lat - 1) else 0);
+  pr "  over 64 cycles: %d commands (%.4f%%), over 1000: %d"
+    (Array.count lat ~f:(fun l -> l > 64))
+    (100. *. Float.of_int (Array.count lat ~f:(fun l -> l > 64)) /. Float.of_int (Int.max 1 (Array.length lat)))
+    (Array.count lat ~f:(fun l -> l > 1000));
   Hashtbl.to_alist lat_by_kind
   |> List.sort ~compare:(fun (a, _) (b, _) -> Char.compare a b)
   |> List.iter ~f:(fun (k, l) ->
