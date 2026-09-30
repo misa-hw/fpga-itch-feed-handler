@@ -1,0 +1,1 @@
+original=1655589 sent=1655466 missing=123 reordered=65262 repeated=0 msg=1023606 dup=729207 gap=45278

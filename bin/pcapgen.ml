@@ -145,10 +145,28 @@ let expect =
          "-symbols"
          (optional_with_default [ "QQQ"; "SPY"; "IWM"; "DIA"; "TQQQ"; "SQQQ"; "AMD"; "UVXY" ] (Arg_type.comma_separated string))
          ~doc:"SYM,.. tracked symbols"
-     and summary_only = flag "-summary" no_arg ~doc:" print only the change count and hash" in
+     and summary_only = flag "-summary" no_arg ~doc:" print only the change count and hash"
+     and mold_receiver =
+       flag
+         "-mold-receiver"
+         no_arg
+         ~doc:
+           " drop messages the board's MoldUDP64 receiver drops (sequence below the \
+            next expected one), for pcaps of frames in the order they were really sent"
+     in
      fun () ->
        let book = Book.create symbols in
        let hash = ref 0 and n = ref 0 in
+       let expected = ref None in
+       let accept seq =
+         (not mold_receiver)
+         ||
+         match !expected with
+         | Some e when seq < e -> false
+         | _ ->
+           expected := Some (seq + 1);
+           true
+       in
        ignore
          (Pcap.iter ?max_packets pcap ~f:(fun ~ts_ns:_ frame ->
             match Packet.parse frame with
@@ -159,6 +177,8 @@ let expect =
                | Ok mold ->
                  List.iteri mold.messages ~f:(fun k m ->
                    let seq = mold.sequence + k in
+                   if accept seq
+                   then
                    Option.iter (Book.apply book (Itch.of_string m)) ~f:(fun (t : Book.Tob.t) ->
                      incr n;
                      hash := Crc32_sw.hash_tob_event !hash ~seq t;

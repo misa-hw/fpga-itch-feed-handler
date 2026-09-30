@@ -146,6 +146,7 @@ let create
   ?selftest
   ?(selftest_delay = 1 lsl 20)
   ?(selftest_on_clk50 = false)
+  ?gmii_idelay_taps
   scope
   (i : _ I.t)
   : _ O.t
@@ -153,13 +154,34 @@ let create
   (* ---------------- rxc domain ---------------- *)
   (* [selftest_on_clk50]: run the receive domain from the 50 MHz oscillator
      instead of the PHY clock, to test the design at speed without a link *)
-  let rxc = if selftest_on_clk50 then i.clk50 else i.e_rxc in
   let phy_ready = wire 1 in
-  let clear_rx = rx_domain_clear ~clock:rxc ~reset_n:i.reset_n ~phy_ready in
+  let rxc, rx_clock_ok, captured =
+    match selftest_on_clk50, gmii_idelay_taps with
+    | true, _ -> i.clk50, vdd, None
+    | false, None -> i.e_rxc, vdd, None
+    | false, Some taps ->
+      (* 1 Gb/s image: BUFIO/IDELAY source-synchronous capture (Gmii_clock) *)
+      let g =
+        Gmii_clock.create
+          ~taps
+          ~clk50:i.clk50
+          ~clear50:(domain_clear ~clock:i.clk50 ~reset_n:i.reset_n)
+          ~e_rxc:i.e_rxc
+          ~e_rxd:i.e_rxd
+          ~e_rxdv:i.e_rxdv
+          ~e_rxer:i.e_rxer
+      in
+      g.rxc, g.ready, Some g
+  in
+  let clear_rx = rx_domain_clear ~clock:rxc ~reset_n:i.reset_n ~phy_ready:(phy_ready &: rx_clock_ok) in
   let rs = Reg_spec.create ~clock:rxc ~clear:clear_rx () in
   let rin = Reg_spec.create ~clock:rxc () in
   (* input registers (packed into the IOBs) *)
-  let rxd = reg rin i.e_rxd and rxdv = reg rin i.e_rxdv and rxer = reg rin i.e_rxer in
+  let rxd, rxdv, rxer =
+    match captured with
+    | Some (g : Gmii_clock.t) -> g.rxd, g.rx_dv, g.rx_er
+    | None -> reg rin i.e_rxd, reg rin i.e_rxdv, reg rin i.e_rxer
+  in
   let mac = Gmii_rx.hierarchical ~mii_mode scope { clock = rxc; clear = clear_rx; rx_dv = rxdv; rx_er = rxer; rxd } in
   let fh =
     let rx =

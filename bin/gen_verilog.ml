@@ -27,6 +27,17 @@ let () =
   | [ _; "board_top"; file ] ->
     let module C = Circuit.With_interface (Board_top.I) (Board_top.O) in
     write ~name:"board_top" (fun scope -> C.create_exn ~name:"board_top" (Board_top.create scope)) file
+  | [ _; "board_top_gmii"; taps; file ] ->
+    (* 1 Gb/s image: GMII inputs through IDELAYs of [taps] x 78 ps *)
+    let module C = Circuit.With_interface (Board_top.I) (Board_top.O) in
+    write ~name:"board_top" (fun scope ->
+      C.create_exn ~name:"board_top" (Board_top.create ~gmii_idelay_taps:(Int.of_string taps) scope))
+      file
+  | [ _; "gmii_probe"; taps; file ] ->
+    let module C = Circuit.With_interface (Board_top.I) (Board_top.O) in
+    write ~name:"board_top" (fun scope ->
+      C.create_exn ~name:"board_top" (Gmii_probe.create ~taps:(Int.of_string taps) scope))
+      file
   | [ _; "board_top_mii"; file ] ->
     let module C = Circuit.With_interface (Board_top.I) (Board_top.O) in
     write ~name:"board_top" (fun scope -> C.create_exn ~name:"board_top" (Board_top.create ~mii_mode:true scope)) file
@@ -82,5 +93,5 @@ let () =
     let module C = Circuit.With_interface (Bram_probe.I) (Bram_probe.O) in
     write ~name:"bram_probe" (fun scope -> C.create_exn ~name:"bram_probe" (Bram_probe.create scope)) file
   | _ ->
-    eprintf "usage: gen_verilog (feed_handler|timing_top|board_top|board_top_mii|board_top_mii_sim) OUT.v\n       gen_verilog (board_top_selftest|board_top_selftest_sim) PCAP OUT.v\n"
+    eprintf "usage: gen_verilog (feed_handler|timing_top|board_top|board_top_mii|board_top_mii_sim) OUT.v\n       gen_verilog (board_top_gmii|gmii_probe) IDELAY_TAPS OUT.v\n       gen_verilog (board_top_selftest|board_top_selftest_sim) PCAP OUT.v\n"
 ;;

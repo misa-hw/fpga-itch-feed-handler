@@ -1,0 +1,65 @@
+1 Gb/s board test, QMTech Wukong (XC7A100T), RTL8211EG PHY, 2026-09-30
+
+Image: board_top with the GMII receive capture of src/hw/gmii_clock.ml
+(`gen_verilog board_top_gmii 26`), Vivado 2026.1:
+  SYNTH_OPTS=-retiming PLACE_DIRECTIVE=ExtraTimingOpt PHYS_DIRECTIVE=AggressiveExplore \
+  ROUTE_DIRECTIVE=AggressiveExplore fpga/vivado_build.sh fpga/build/board_top_gmii.v OUT 8
+  All constraints met: WNS +0.009 ns (125 MHz receive domain), WHS +0.013 ns.
+  16,519 LUTs (26%), 10,650 registers (8%).
+
+GMII receive inputs, constrained to the PHY's window (datasheet rev 1.6,
+table 64: RXD/RXDV/RXER valid 2.5 ns before to 0.5 ns after RXC rising):
+  capture                                    worst input setup / hold
+  RXC -> BUFG -> IOB flip-flops              +0.351 / +0.165 ns (Vivado's
+                                             automatic IOB zero-hold delay)
+  RXC -> deskewing MMCM, -45 degrees         -1.617 / +0.020 ns; the two
+                                             slacks sum to about -1.6 ns, so
+                                             no phase closes both
+  BUFIO + IDELAYE2, 26 taps (used)           +0.444 / +0.450 ns
+  (capture-only probe, src/hw/gmii_probe.ml: 0 taps gave +2.719 / -1.330 ns,
+  from which 26 taps balances the two)
+
+Test: scripts/board_linerate.sh (scripts/fpga_connect.sh wraps it)
+  tcpreplay sends build/tracked.pcap (1,655,589 frames, 1,752,946 MoldUDP64
+  messages) to eno1 (Intel I219, e1000e) on a direct cable, 1000 Mb/s full
+  duplex. tcpdump records the frames the kernel hands to the NIC; the full
+  frames are rebuilt in that order (scripts/rebuild_sent.py) and the
+  reference book (`pcapgen expect -mold-receiver`) is run on them with the
+  hardware's MoldUDP64 rule. PASS requires the board's accepted frames,
+  message/duplicate/gap counters, top-of-book change count and CRC-32 hash
+  of every change to equal the model's on that stream, with no FCS errors,
+  frame errors or overflows, and no tcpdump drops.
+
+The sender does not send the pcap faithfully at speed. At the kernel's
+transmit tap it drops frames and reorders others (interleaved runs about
+1,900 frames apart), with the default fq_codel qdisc and with a FIFO; the
+NIC has one transmit queue. tcpreplay counts those frames as sent.
+  rate           frames sent    dropped    out of order
+  20,000 pps     99,997/100k    3          0
+  top speed      99,272/100k    728        3,912
+Running the hardware's MoldUDP64 rule over the captured order reproduces
+the board's duplicate and gap counters exactly in every run, so the board
+received exactly what was sent. (Before this was known, a comparison with
+the unmodified pcap failed: 715,441 duplicates at top speed.)
+
+Runs, board == reference book on the sent stream:
+  first 100,000 frames at 20,000 pps: PASS
+    99,997 frames, 102,078 messages, 0 duplicates, 0 gaps,
+    56,196 changes, hash 4527e808
+  first 100,000 frames at top speed (131k pps): PASS
+    99,272 frames, 57,221 messages, 44,115 duplicates, 2,711 gaps,
+    1,576 changes, hash 945d297e
+  all 1,655,589 frames at top speed: PASS (results/board_linerate_top.*)
+    tcpreplay: 12.52 s, 99.5 Mb/s, 132,181 frames/s average
+    tcpdump: 1,655,466 captured, 0 dropped by kernel
+    sender: 123 frames dropped, 65,262 out of order
+    board and model: 1,655,466 frames, 1,023,606 messages, 729,207
+    duplicates, 45,278 gaps, 2,948 changes, hash 6e0f8b00
+    0 FCS errors, 0 frame errors, 0 overflows, book FIFO peak 1
+    (late Stock Directory messages were dropped as duplicates, so only 3 of
+    the 8 symbols were mapped: few book changes in this run)
+  Frames reached the NIC as little as 0.95 us apart (host timestamps),
+  about one frame's wire time at 1 Gb/s; 2.4% were spaced that closely.
+
+Not shown: sustained 1 Gb/s. The link and the board's receive path run at
+1 Gb/s, but this host averages about 100 Mb/s with tcpreplay.

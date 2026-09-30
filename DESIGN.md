@@ -170,7 +170,7 @@ change to the design.
 
 ## 6. Verification strategy
 
-Four layers, each checked against the one above:
+Five layers, each checked against the one above:
 
 1. **Reference book** (`src/model/book.ml`): a Hashtbl plus a Map, obviously
    correct. It is Quickcheck-tested against an even more naive model that
@@ -188,7 +188,17 @@ Four layers, each checked against the one above:
 4. **Full pipeline** (`bin/verify.ml`, Verilator): every frame of a pcap at
    exact 1 Gb/s line rate (20-byte preamble plus inter-frame gap). Every book
    event is compared with the reference by MoldUDP64 sequence number, and
-   latency is measured per message.
+   latency is measured per message. It starts after the GMII MAC;
+   `tests/hw/test_gmii_stream.ml` sends real frames through the MAC into the
+   whole pipeline at the minimum inter-frame gap (and an 8-byte gap, and a
+   5-byte preamble).
+5. **Board at 1 Gb/s** (`scripts/board_linerate.sh`): the pcap over a cable.
+   The board's change count and CRC-32 over every change must equal the
+   reference book's on the frames that actually left the PC, recorded with
+   tcpdump, because the PC drops and reorders frames at speed. The same
+   counter comparison is what showed that: running the hardware's MoldUDP64
+   rule over the PC's real sending order reproduced the board's 44,115
+   duplicates and 2,711 gaps exactly.
 
 Bugs found by this process before hardware (the board found three more; see
 §9):
@@ -197,6 +207,11 @@ Bugs found by this process before hardware (the board found three more; see
   marker 0xFFFF in a directed test.
 - A register slice in the order-book sorter read index -1 for entry 0.
 - Greedy two-choice hashing overflowed at 84% load; see §4.
+- Background refill: a command that found its side's cache empty waited for
+  the scan already running for that side. That scan could have discarded
+  the levels that had just become best, so its result was empty and the
+  command emitted an empty side. The property test (tiny tables, several
+  command spacings) caught it; the command now starts a fresh scan.
 - Hardcaml's `&:` and `==:` have the same OCaml precedence and associate to
   the left, so `a &: b ==: c` means `(a &: b) ==: c`. Hardware code in this
   repo parenthesises every mixed expression.
@@ -251,7 +266,30 @@ pieces) cost timing: the core routes at 78.59 MHz. Its critical path,
   RX_CLK (125 MHz for 8-bit GMII at 1 Gb/s, or 25 MHz for low-nibble-first
   MII at 100 Mb/s; pin P4 is clock capable). The MII variant assembles each
   pair of nibbles into a byte before the same MAC. There is no clock
-  crossing or elastic buffer in the latency path.
+  crossing or elastic buffer in the latency path; the gigabit capture below
+  adds one register stage.
+- **GMII capture at 1 Gb/s** (`src/hw/gmii_clock.ml`). The RTL8211EG
+  guarantees RXD, RXDV and RXER only from 2.5 ns before to 0.5 ns after each
+  RXC rising edge (datasheet rev 1.6, table 64), a 3 ns window in an 8 ns
+  cycle. With that window as input constraints, Vivado compared three
+  captures:
+
+  | capture | worst input setup / hold |
+  |---|---|
+  | RXC through a BUFG into IOB flip-flops | +0.35 / +0.17 ns, only thanks to the IOB's automatic zero-hold delay |
+  | RXC through a deskewing MMCM, phase-shifted | no phase works: the two slacks sum to about -1.6 ns across process corners |
+  | BUFIO-clocked IOB flip-flops, data through IDELAYE2 (used) | +0.44 / +0.45 ns at 26 taps |
+
+  RXC arrives on an SRCC pin in bank 34, the bank of all the data pins, so
+  a BUFIO can clock that bank's input registers over a short path with
+  little variation. The IDELAYs (78 ps taps, calibrated by an IDELAYCTRL on
+  a 200 MHz clock made from the 50 MHz oscillator) move the data window onto
+  that edge. A capture-only top (`src/hw/gmii_probe.ml`) builds in about
+  three minutes, and 0 taps (+2.72 / -1.33 ns) showed that 26 balances the
+  two. RXC also drives a BUFG for the rest of the receive domain; the bytes
+  cross from the BUFIO clock to it through a falling-edge register, half a
+  cycle of margin each way, at a cost of one cycle of latency. The
+  100 Mb/s image keeps the direct capture: at 25 MHz the window is wide.
 - **UART domain:** the UART and status logic run from the 50 MHz oscillator,
   because RX_CLK stops when the link is down.
   - Book events cross into it through an asynchronous FIFO (Gray-coded

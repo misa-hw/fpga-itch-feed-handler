@@ -1,0 +1,10 @@
+File Cache is enabled
+Actual: 1655589 packets (155818275 bytes) sent in 12.52 seconds
+Rated: 12440375.2 Bps, 99.52 Mbps, 132180.56 pps
+Flows: 1 flows, 0.07 fps, 1655589 unique flow packets, 0 unique non-flow packets
+Statistics for network device: eno1
+	Successful packets:        1655589
+	Failed packets:            0
+	Truncated packets:         0
+	Retried packets (ENOBUFS): 0
+	Retried packets (EAGAIN):  0
