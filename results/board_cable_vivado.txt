@@ -1,0 +1,17 @@
+Direct-cable replay, Vivado-built image (2026-09-30 18:39), 100 Mb/s MII link to eno1
+Bitstream: fpga/build/vivado_board50/board_top.bit
+  (./fpga/vivado_build.sh fpga/build/board_top_50.v fpga/build/vivado_board50 40)
+Traffic: first 400 packets of build/board_slow.pcap as UDP multicast (make replay).
+Raw capture: results/board_cable_vivado_uart.txt
+
+Last status line:
+S1 frm=00000191 acc=00000190 flt=00000001 err=00000000 fcs=00000000 msg=00000193 gap=00000000 dup=00000000 cmd=00000061 chg=00000027 hash=6debb1d9 lost=00000000 kick=00000000 rfl=00000000 ovf=00000000 ord=0000005f lvl=00000054 map=ff blen=00000000 dord=00000061 fcmd=00000061 fmax=00000001 uns=00000000 bst=01 bfe=1 clk=140125b8
+
+Model (pcapgen expect build/board_slow.pcap -max-packets 400):
+chg=00000027 hash=6debb1d9
+
+PASS: 400 feed frames accepted (1 host frame filtered), 0 FCS errors, 403
+messages, 97 book commands, 95 orders, 84 levels, 0 kicks, 0 overflows; the
+39 event lines are identical to the model's, and the on-chip change count
+and hash equal the model's. (The earlier openXC7 image, results/board_cable.txt,
+had the same events but a wrong on-chip hash.)

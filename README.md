@@ -118,6 +118,13 @@ stream to the model. The [physical idle test](results/board_idle.txt)
 programmed the MII bitstream over JTAG and captured complete UART status
 lines with zero error counters.
 
+**Over a real Ethernet cable, the board matches the model.** The PC sends
+400 MoldUDP64 packets of real ITCH data over a direct 100 Mb/s link to the
+Vivado-built image; the board accepts all 400 frames with no FCS errors,
+processes 97 book commands, and prints 39 top-of-book changes identical to
+the OCaml model's, with the same on-chip change count and hash (`6debb1d9`)
+([`results/board_cable_vivado.txt`](results/board_cable_vivado.txt)).
+
 **On silicon, the feed handler core matches the model.** An on-chip self-test
 bitstream plays 108 real frames from a ROM into the pipeline, with no PHY,
 cable or network configuration. Its UART status reports 97 book commands and

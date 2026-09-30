@@ -299,3 +299,7 @@ to `pcapgen expect` (`results/board_selftest.txt`).
    correct. The Vivado build of the same Verilog is correct at 50 MHz
    (`results/board_toolchains.txt`), so board images are built with Vivado
    (`fpga/vivado_build.sh`), which also closes the core at 125 MHz.
+
+With the Vivado image, the direct-cable replay of 400 real packets matches
+the model exactly: all 39 top-of-book events and the on-chip change count and
+hash `6debb1d9` (`results/board_cable_vivado.txt`).
