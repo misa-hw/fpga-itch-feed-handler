@@ -1,0 +1,17 @@
+Same design, two toolchains, on the board (on-chip ROM self-test of 108 frames;
+model: chg=00000027 hash=6debb1d9)
+
+openXC7 bitstream, receive clock 2.5 MHz (PHY, no link):  chg=27 hash=6debb1d9  correct
+openXC7 bitstream, cable run, 25 MHz (PHY, 100 Mb/s):     book correct, all 39 events
+                                                          equal the model, but the on-chip
+                                                          hash register read 283be21f
+openXC7 bitstream, receive domain on 50 MHz oscillator:   map=00: symbol filter never
+                                                          matched; no commands
+Vivado bitstream, receive domain on 50 MHz oscillator:    chg=27 hash=6debb1d9  correct
+
+nextpnr reported all openXC7 images as meeting timing with 2-4x margin
+(e.g. 82.8 MHz for the 50 MHz one). Different logic fails as the clock rises
+while every simulation (RTL, and gate level with Xilinx models) is correct:
+openXC7's timing results do not hold on this silicon. Board images are
+therefore built with Vivado (fpga/vivado_build.sh); openXC7 remains useful
+for fast iteration.

@@ -26,3 +26,13 @@ Core receive pipeline: fpga/timing.sh, eight-level top cache
   Yosys: 65 RAM32M, 67 RAMB36E1, 62 RAMB18E1; no FSM re-encoded
 100 Mb/s board build (TARGET_MHZ=50), same workarounds:
   Routed Fmax: 94.23 MHz receive (PASS at 25 MHz), 111.92 MHz UART (PASS at 50 MHz)
+
+Vivado 2026.1 (vendor flow, fpga/vivado_build.sh), same generated Verilog:
+Core receive pipeline (Timing_top) at 125 MHz (1 Gb/s byte clock)
+  Default directives:    WNS -0.628 ns (~116 MHz), 43 failing endpoints
+  ExtraTimingOpt place, AggressiveExplore phys_opt/route:
+                         WNS +0.019 ns, WHS +0.024 ns, 0 failing endpoints: MET
+  Utilization: 12,274 LUTs (19.4%), 8,276 registers (6.5%),
+               105.5 BRAM tiles (78%: 104 RAMB36 + 3 RAMB18)
+100 Mb/s board image (MII, 25 MHz receive, 50 MHz UART): WNS +4.210 ns, hold met
+50 MHz self-test image (receive domain on the 50 MHz oscillator): WNS +6.779 ns

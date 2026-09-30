@@ -41,7 +41,7 @@ let () =
           ~name:"board_top"
           (Board_top.create ~mii_mode:true ~bit_cycles:4 ~second:20_000 ~phy_reset_cycles:8 scope))
       file
-  | [ _; ("board_top_selftest" | "board_top_selftest_sim" as kind); pcap; file ] ->
+  | [ _; ("board_top_selftest" | "board_top_selftest50" | "board_top_selftest_sim" as kind); pcap; file ] ->
     (* frames played from a ROM instead of the PHY; see Board_top.selftest_player *)
     let frames = ref [] in
     ignore (Net.Pcap.iter pcap ~f:(fun ~ts_ns:_ f -> frames := f :: !frames) : int);
@@ -63,7 +63,12 @@ let () =
                ~selftest:frames
                ~selftest_delay:8000
                scope
-           else Board_top.create ~mii_mode:true ~selftest:frames scope))
+           else
+             Board_top.create
+               ~mii_mode:true
+               ~selftest:frames
+               ~selftest_on_clk50:(String.equal kind "board_top_selftest50")
+               scope))
       file
   | [ _; "bram_probe"; file ] ->
     let module C = Circuit.With_interface (Bram_probe.I) (Bram_probe.O) in

@@ -79,7 +79,9 @@ measured separately.
 | Peak live price levels | 7,633 / 16,384 slots |
 | FIFO maximum occupancy in full replay | 54 / 512 commands |
 | Cache refills in full replay | 1,097 |
-| Core openXC7 routed Fmax | 78.59 MHz with the board workarounds (93.36 MHz before); 125 MHz target missed |
+| Core at 125 MHz, **Vivado** | **met**: WNS +0.019 ns, hold met (aggressive directives) |
+| Core resources, Vivado | 12,274 LUTs (19%), 8,276 FFs (7%), 105.5 BRAM tiles (78%) |
+| Core openXC7 routed Fmax | 78.59 MHz (93.36 MHz before the board workarounds); not trustworthy on silicon, see below |
 | Core logic cells estimated by Yosys | 13,023 |
 | Core block RAM | 67 RAMB36 + 62 RAMB18 |
 | 100 Mb/s board routed Fmax | 94.23 MHz receive / 111.92 MHz UART; 25 / 50 MHz targets met |
@@ -128,6 +130,17 @@ held in reset while the PHY resets, yosys FSM re-encoding is disabled, and
 [DESIGN.md section 9](DESIGN.md#9-board-bring-up-what-simulation-did-not-catch)
 and [`results/bram_probe.txt`](results/bram_probe.txt).
 
+Only the Vivado bitstreams are reliable on the board (see the toolchain
+comparison in DESIGN.md section 9). The cable image:
+
+```bash
+TARGET_MHZ=50 ./fpga/build_board.sh            # generates fpga/build/board_top_50.v (and an openXC7 image)
+./fpga/vivado_build.sh fpga/build/board_top_50.v fpga/build/vivado_board50 40
+BITSTREAM=fpga/build/vivado_board50/board_top.bit make replay   # after the network setup below
+```
+
+The self-test:
+
 ```bash
 SELFTEST_PCAP=build/board_subset.pcap TARGET_MHZ=50 ./fpga/build_board.sh
 openFPGALoader-xpcu -c xilinxPlatformCableUsb fpga/build/board_top_50_selftest.bit
@@ -175,6 +188,10 @@ raw-socket privilege or `tcpreplay` package is needed. It sends the first
 - Order references are limited to 32 bits, shares to 24 bits per order, and
   capacity to the selected eight symbols. Unsupported values are counted.
 - A 2,048-row level scan causes the long latency tail when a cache empties.
+- openXC7 bitstreams failed at speed on the board although nextpnr reported
+  2-4x timing margin ([`results/board_toolchains.txt`](results/board_toolchains.txt));
+  the Vivado build of the same Verilog is correct. Board images are built
+  with Vivado.
 - openXC7 workarounds, found on the board: yosys FSM extraction is disabled
   in every build, and no BRAM table is deeper than 2,048 rows (RAMB36E1 in
   4K x 9 mode read back wrong).

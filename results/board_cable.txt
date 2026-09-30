@@ -1,0 +1,20 @@
+Direct-cable replay on the board (2026-09-30 08:18), 100 Mb/s MII link to eno1
+Bitstream: fpga/build/board_top_50.bit (with the bring-up fixes of DESIGN.md section 9)
+Traffic: first 400 packets of build/board_slow.pcap sent as UDP multicast by
+scripts/replay_udp.py (make replay), 10 ms apart. Raw capture: results/board_uart.txt
+
+Last status line:
+S1 frm=00000195 acc=00000190 flt=00000005 err=00000000 fcs=00000000 msg=00000193 gap=00000000 dup=00000000 cmd=00000061 chg=00000027 hash=283be21f lost=00000000 kick=00000000 rfl=00000000 ovf=00000000 ord=0000005f lvl=00000054 map=ff blen=00000000 dord=00000061 fcmd=00000061 fmax=00000001 uns=00000000 bst=01 bfe=1 clk=141a59c2
+
+Model (pcapgen expect build/board_slow.pcap -max-packets 400):
+chg=00000027 hash=6debb1d9
+
+- 400 feed frames accepted (5 host frames filtered), 0 FCS errors, 403 messages,
+  97 book commands, 95 orders, 84 levels, 0 kicks: as in simulation.
+- The 39 event lines printed by the board are identical, line for line, to
+  the model's 39 (diff: no differences), and their CRC-32 computed on the PC
+  is 6debb1d9, the model's hash.
+- The board's own running hash register reported 283be21f. It is not the
+  hash of the events with one skipped, duplicated or zero event added. The
+  book output is exact; the on-chip hash register is wrong in this run
+  (under investigation; the 2.5 MHz self-test image computed it correctly).

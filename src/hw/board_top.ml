@@ -145,12 +145,15 @@ let create
   ?(phy_reset_cycles = 1 lsl 20)
   ?selftest
   ?(selftest_delay = 1 lsl 20)
+  ?(selftest_on_clk50 = false)
   scope
   (i : _ I.t)
   : _ O.t
   =
   (* ---------------- rxc domain ---------------- *)
-  let rxc = i.e_rxc in
+  (* [selftest_on_clk50]: run the receive domain from the 50 MHz oscillator
+     instead of the PHY clock, to test the design at speed without a link *)
+  let rxc = if selftest_on_clk50 then i.clk50 else i.e_rxc in
   let phy_ready = wire 1 in
   let clear_rx = rx_domain_clear ~clock:rxc ~reset_n:i.reset_n ~phy_ready in
   let rs = Reg_spec.create ~clock:rxc ~clear:clear_rx () in

@@ -210,8 +210,12 @@ the current Fmax.
 Registering the BRAM write port was also tried: the eight-level core routed
 at 92.65 MHz, so that extra pipeline stage was removed.
 
-The board workarounds of section 9 (no FSM re-encoding, 2,048-deep BRAM
-pieces) cost timing: the core now routes at 78.59 MHz. Its critical path,
+**With Vivado, the core meets 125 MHz** (WNS +0.019 ns with
+ExtraTimingOpt placement and AggressiveExplore physical optimisation and
+routing; -0.628 ns with default directives), using 19% of the LUTs and 78%
+of the block RAM. That is the number to trust (see section 9). With openXC7,
+the board workarounds of section 9 (no FSM re-encoding, 2,048-deep BRAM
+pieces) cost timing: the core routes at 78.59 MHz. Its critical path,
 12.72 ns, still ends at a level-bank BRAM input and is 74% routing. The
 100 Mb/s board build needs only 25 MHz and routes at 94 MHz.
 
@@ -279,3 +283,12 @@ separated the layers one at a time:
 The self-test then matched the model on silicon: 97 commands, 95 live
 orders, 84 levels, no kicks, and the change count and hash `6debb1d9` equal
 to `pcapgen expect` (`results/board_selftest.txt`).
+
+4. **At speed, openXC7's timing does not hold.** That self-test ran at
+   2.5 MHz (the PHY's clock without a link). On the cable at 25 MHz, the
+   book was exact (all 39 events equal the model's) but the on-chip hash
+   register was wrong. Clocked at 50 MHz, the symbol filter never matched.
+   nextpnr reported 2-4x margin for all of them, and every simulation is
+   correct. The Vivado build of the same Verilog is correct at 50 MHz
+   (`results/board_toolchains.txt`), so board images are built with Vivado
+   (`fpga/vivado_build.sh`), which also closes the core at 125 MHz.

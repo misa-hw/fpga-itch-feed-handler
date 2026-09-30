@@ -15,9 +15,10 @@ case "$target_mhz" in
 esac
 stem="$b/board_top_${target_mhz}"
 # SELFTEST_PCAP=file: frames from that pcap are played from an on-chip ROM
-# instead of the PHY (100 Mb/s build only); the bitstream gets a _selftest suffix
+# instead of the PHY (100 Mb/s build only); the bitstream gets a _selftest suffix.
+# SELFTEST_CLK50=1 also runs the receive domain from the 50 MHz oscillator.
 selftest="${SELFTEST_PCAP:-}"
-if [[ -n $selftest ]]; then stem="${stem}_selftest"; fi
+if [[ -n $selftest ]]; then stem="${stem}_selftest${SELFTEST_CLK50:+50}"; fi
 mkdir -p "$b"
 cp fpga/wukong.xdc "$stem.xdc"
 if [[ $target_mhz == 50 ]]; then
@@ -33,7 +34,7 @@ if [[ ! -s $b/xc7a100tfgg676.bin ]]; then
 fi
 dune build ./bin/gen_verilog.exe
 if [[ -n $selftest ]]; then
-  ./_build/default/bin/gen_verilog.exe board_top_selftest "$selftest" "$stem.v"
+  ./_build/default/bin/gen_verilog.exe "board_top_selftest${SELFTEST_CLK50:+50}" "$selftest" "$stem.v"
 else
   ./_build/default/bin/gen_verilog.exe "$top_kind" "$stem.v"
 fi
