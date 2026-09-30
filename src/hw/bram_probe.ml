@@ -46,6 +46,8 @@ type result =
   ; want : Signal.t
   }
 
+let low32 x = if Signal.width x >= 32 then sel_bottom x ~width:32 else uresize x ~width:32
+
 let probe ~spec ~clock ~depth ~width =
   let open Always in
   let ab = Int.ceil_log2 depth in
@@ -92,8 +94,8 @@ let probe ~spec ~clock ~depth ~width =
                 ; when_
                     (errors.value ==:. 0)
                     [ first_addr <-- uresize addr.value ~width:16
-                    ; got <-- sel_bottom q_r ~width:32
-                    ; want <-- sel_bottom expected ~width:32
+                    ; got <-- low32 q_r
+                    ; want <-- low32 expected
                     ]
                 ]
             ; addr <-- addr.value +:. 1
@@ -107,7 +109,7 @@ let probe ~spec ~clock ~depth ~width =
 
 let shapes = [ "order_bank", 4096, 284; "level_bank", 2048, 276 ]
 
-let create ?(bit_cycles = 434) ?(second = 50_000_000) _scope (i : _ I.t) : _ O.t =
+let create ?(shapes = shapes) ?(bit_cycles = 434) ?(second = 50_000_000) _scope (i : _ I.t) : _ O.t =
   let clock = i.clk50 in
   let clear = Board_top.domain_clear ~clock ~reset_n:i.reset_n in
   let spec = Reg_spec.create ~clock ~clear () in

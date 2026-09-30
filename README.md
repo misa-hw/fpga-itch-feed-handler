@@ -194,5 +194,6 @@ raw-socket privilege or `tcpreplay` package is needed. It sends the first
   with Vivado.
 - openXC7 workarounds, found on the board: yosys FSM extraction is disabled
   in every build, and no BRAM table is deeper than 2,048 rows (RAMB36E1 in
-  4K x 9 mode read back wrong).
+  4K x 9 mode read back wrong). The BRAM bug is fixed upstream-bound in
+  [openXC7/nextpnr#63](https://github.com/openXC7/nextpnr/pull/63).
 - The sample prefix is not a complete trading day.

@@ -70,6 +70,14 @@ let () =
                ~selftest_on_clk50:(String.equal kind "board_top_selftest50")
                scope))
       file
+  | [ _; "bram_probe_x9"; file ] ->
+    (* one 4096 x 9 memory: a single RAMB36E1 in 4K x 9 mode *)
+    let module C = Circuit.With_interface (Bram_probe.I) (Bram_probe.O) in
+    write
+      ~name:"bram_probe"
+      (fun scope ->
+        C.create_exn ~name:"bram_probe" (Bram_probe.create ~shapes:[ "x9", 4096, 9 ] scope))
+      file
   | [ _; "bram_probe"; file ] ->
     let module C = Circuit.With_interface (Bram_probe.I) (Bram_probe.O) in
     write ~name:"bram_probe" (fun scope -> C.create_exn ~name:"bram_probe" (Bram_probe.create scope)) file

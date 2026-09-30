@@ -279,6 +279,13 @@ separated the layers one at a time:
      bit wrong. The 2,048-deep level-bank shape (RAMB18E1, 2K x 9) was
      perfect. Tables deeper than 2,048 rows are now built from 2,048-deep
      pieces, with a registered read-side select. BRAM use is unchanged.
+     Root cause, found afterwards: at width 9 a RAMB36E1 keeps the parity bit
+     of odd addresses in its upper half, which reads it from `DIPADIP1`, and
+     nextpnr left that pin unconnected (it already duplicated the data pin
+     for width 1). A 14-line packer fix took a single 4K x 9 BRAM from 1,024
+     wrong words to 0 on this board; submitted upstream as
+     [openXC7/nextpnr#63](https://github.com/openXC7/nextpnr/pull/63) with a
+     regression test.
 
 The self-test then matched the model on silicon: 97 commands, 95 live
 orders, 84 levels, no kicks, and the change count and hash `6debb1d9` equal
