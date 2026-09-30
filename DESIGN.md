@@ -184,7 +184,32 @@ Five layers, each checked against the one above:
      sequences with tiny tables, **including its internal counters** (kicks,
      refills, overflows, live orders and levels), so a cache or hashing bug
      cannot hide behind matching output.
-   - Waveform expect tests for each stage.
+   - Waveform expect tests for each stage. The order book's, from
+     `tests/hw/test_book_hw.ml` (a bid of 100 at 190.10, a better one of 50
+     at 190.12, then that one deleted; one event per command, the best bid
+     following):
+
+     ```text
+     ┌Signals───────────┐┌Waves───────────────────────────────────────────────────────────────────────────────────┐
+     │cmd_valid         ││──────┐                                                                                 │
+     │                  ││      └─────────────────────────────────────────────────────────────────────────        │
+     │                  ││────┬───────────────────────────────────────────────────────────────────────────        │
+     │cmd_kind          ││ 1  │5                                                                                  │
+     │                  ││────┴───────────────────────────────────────────────────────────────────────────        │
+     │event_valid       ││                        ┌─┐                   ┌─┐                         ┌─┐           │
+     │                  ││────────────────────────┘ └───────────────────┘ └─────────────────────────┘ └───        │
+     │event_changed     ││                        ┌───────────────────────────────────────────────────────        │
+     │                  ││────────────────────────┘                                                               │
+     │                  ││────────────────────────┬─────────────────────┬───────────────────────────┬─────        │
+     │event_seq         ││ 0                      │2                    │3                          │4            │
+     │                  ││────────────────────────┴─────────────────────┴───────────────────────────┴─────        │
+     │                  ││────────────────────────┬─────────────────────┬───────────────────────────┬─────        │
+     │event_bid_price   ││ 0                      │1901000              │1901200                    │1901.        │
+     │                  ││────────────────────────┴─────────────────────┴───────────────────────────┴─────        │
+     │                  ││────────────────────────┬─────────────────────┬───────────────────────────┬─────        │
+     │event_bid_shares  ││ 0                      │100                  │50                         │100          │
+     │                  ││────────────────────────┴─────────────────────┴───────────────────────────┴─────        │
+     ```
 4. **Full pipeline** (`bin/verify.ml`, Verilator): every frame of a pcap at
    exact 1 Gb/s line rate (20-byte preamble plus inter-frame gap). Every book
    event is compared with the reference by MoldUDP64 sequence number, and
@@ -363,3 +388,50 @@ to `pcapgen expect` (`results/board_selftest.txt`).
 With the Vivado image, the direct-cable replay of 400 real packets matches
 the model exactly: all 39 top-of-book events and the on-chip change count and
 hash `6debb1d9` (`results/board_cable_vivado.txt`).
+
+## 10. The 1 Gb/s test: when the counters pointed at the sender
+
+The first full replay over the gigabit link failed badly: 1,914 frames
+missing, 715,441 messages counted as MoldUDP64 duplicates, a book that
+diverged from the reference. Every frame that arrived was intact (no FCS
+or frame errors), and the Verilator replay of the same pcap was exact.
+
+- **A pattern in the counters.** The duplicate count was within 0.1% of the
+  pcap's 715,926 frames of 83 and 87 bytes, the single-message frames that
+  carry an Order Delete or an Order Cancel. That looked like a
+  frame-length bug in the MAC, which the Verilator replay never exercises
+  (it starts after the MAC). A new test sent real frames through the GMII
+  MAC at the minimum inter-frame gap, an 8-byte gap and a 5-byte preamble:
+  no duplicates, no gaps (`tests/hw/test_gmii_stream.ml`).
+- **A rate sweep.** The first 10,000 frames at 500 frames/s and the first
+  100,000 at 20,000 and 60,000 frames/s gave no duplicates; at top speed (127,000 frames/s) they came
+  back. So it depended on rate, not on the frames.
+- **What the host sent.** tcpdump on the sending interface records the
+  frames at the kernel's transmit tap, after the qdisc. They were out of
+  order: two in-order streams interleaved about 1,900 frames apart, and
+  frames missing, all counted as sent by tcpreplay. Replacing the default
+  `fq_codel` qdisc with a FIFO did not change it; the NIC has a single
+  transmit queue.
+- **The proof.** The board's MoldUDP64 rule (a message below the next
+  expected sequence number is a duplicate; above it, a gap) applied to the
+  captured order reproduces the board's counters exactly, in every run: for
+  example 44,115 duplicates and 2,711 gaps for 100,000 frames at top speed.
+  The board had received and processed exactly what was sent. The 83- and 87-byte frames were most of the
+  frames overtaken by the interleaved stream.
+
+The test (`scripts/board_linerate.sh`) now records what leaves the host,
+rebuilds those frames in order from the pcap by sequence number, and runs
+the reference book on them with the hardware's rule. At 60,000 frames/s
+the host sends everything in order except the last few frames, and the
+board produces all 1,043,727 changes of the dataset with the reference's
+count and hash.
+
+Two smaller things this run exposed:
+- tcpdump runs under an AppArmor profile that refuses signals from
+  processes confined as VS Code's terminal, even as root, so a capture
+  started from that terminal could not be stopped by `kill`, `pkill` or
+  Ctrl-C; the test now runs it as a transient systemd unit.
+- After the FPGA is programmed, its PHY comes out of reset and the gigabit
+  link can take minutes and several speeds to settle; restricting the NIC
+  to advertise 1000BASE-T only made it worse. The test restarts
+  autonegotiation from the host and waits for 1000 Mb/s.

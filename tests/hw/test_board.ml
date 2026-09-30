@@ -149,45 +149,44 @@ let replay_real_pcap ~mii_mode =
            String.is_prefix line ~prefix:"S" && Option.is_some (status_field line "lost"))
          |> List.last_exn
        in
-       printf
-         "%d E lines, equal to the model: %b\n"
-         (List.length e_lines)
-         ([%equal: string list] e_lines (Queue.to_list expected));
-       (* diagnostics when they differ: missing lines, and text that is
-          neither an event nor a status line *)
-       Queue.iter expected ~f:(fun l ->
-         if not (List.mem e_lines l ~equal:String.equal) then printf "missing: %s\n" l);
-       List.iter lines ~f:(fun l ->
-         if not (String.is_prefix l ~prefix:"E " || String.is_prefix l ~prefix:"S")
-         then printf "other text: %S\n" l);
-       let f = status_field status in
-       printf
-         "status: link=%c frames=%s accepted=%s fcs=%s chg=%s (model %08x) hash=%s (model %08x) lost=%s\n"
-         status.[1]
-         (Option.value_exn (f "frm"))
-         (Option.value_exn (f "acc"))
-         (Option.value_exn (f "fcs"))
-         (Option.value_exn (f "chg"))
-         (Queue.length expected)
-         (Option.value_exn (f "hash"))
-         !hash
-         (Option.value_exn (f "lost")))
+       (* silent when everything matches (so the test also passes without
+          the sample data, like every data-dependent test here): all event
+          lines equal the model's, all 400 frames accepted, the corrupted
+          frame counted as the one FCS error, and the on-chip change count
+          and hash equal the model's *)
+       let f name = Option.value_exn (status_field status name) in
+       let ok =
+         [%equal: string list] e_lines (Queue.to_list expected)
+         && Char.equal status.[1] '1'
+         && String.equal (f "frm") (sprintf "%08x" (n_packets + 1))
+         && String.equal (f "acc") (sprintf "%08x" n_packets)
+         && String.equal (f "fcs") "00000001"
+         && String.equal (f "chg") (sprintf "%08x" (Queue.length expected))
+         && String.equal (f "hash") (sprintf "%08x" !hash)
+         && String.equal (f "lost") "00000000"
+       in
+       if not ok
+       then (
+         printf
+           "%d E lines, %d in the model\n"
+           (List.length e_lines)
+           (Queue.length expected);
+         Queue.iter expected ~f:(fun l ->
+           if not (List.mem e_lines l ~equal:String.equal) then printf "missing: %s\n" l);
+         List.iter lines ~f:(fun l ->
+           if not (String.is_prefix l ~prefix:"E " || String.is_prefix l ~prefix:"S")
+           then printf "other text: %S\n" l);
+         printf "status: %s\nmodel: chg=%08x hash=%08x\n" status (Queue.length expected) !hash))
 ;;
 
 let%expect_test "board: GMII in, UART out, equal to the model" =
   replay_real_pcap ~mii_mode:false;
-  [%expect {|
-    39 E lines, equal to the model: true
-    status: link=1 frames=00000191 accepted=00000190 fcs=00000001 chg=00000027 (model 00000027) hash=6debb1d9 (model 6debb1d9) lost=00000000
-    |}]
+  [%expect {| |}]
 ;;
 
 let%expect_test "board: real packets in MII mode" =
   replay_real_pcap ~mii_mode:true;
-  [%expect {|
-    39 E lines, equal to the model: true
-    status: link=1 frames=00000191 accepted=00000190 fcs=00000001 chg=00000027 (model 00000027) hash=6debb1d9 (model 6debb1d9) lost=00000000
-    |}]
+  [%expect {| |}]
 ;;
 
 let%expect_test "board: MII nibbles at 100 Mb/s, including FCS detection" =

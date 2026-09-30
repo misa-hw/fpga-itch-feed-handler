@@ -30,10 +30,27 @@ trade-offs.
 
 ## Architecture
 
-```text
-PHY --GMII--> MAC/FCS -> Ethernet/IPv4/UDP -> MoldUDP64 -> ITCH decode -> symbol map
-                                                                            |
-                    top-of-book event <- top cache <- level BRAM <- order BRAM <- FIFO
+```mermaid
+flowchart LR
+  PHY["RTL8211EG PHY"] -->|"GMII, 8 bits at 125 MHz"| CAP["GMII capture<br/>BUFIO + IDELAY"]
+  subgraph RX["receive clock, 125 MHz: one byte per cycle"]
+    CAP --> MAC["MAC<br/>preamble, FCS"]
+    MAC --> NET["Ethernet, IPv4, UDP<br/>address filter"]
+    NET --> MOLD["MoldUDP64<br/>sequence, duplicates, gaps"]
+    MOLD --> ITCH["ITCH 5.0 decoder"]
+    ITCH --> SYM["symbol map<br/>8 slots"]
+    SYM --> FIFO["command FIFO"]
+    FIFO --> ORD["order table<br/>2 hashed 4-way BRAM banks"]
+    ORD --> LVL["level table<br/>2 hashed 4-way BRAM banks"]
+    LVL --> TOP["top 8 levels per side<br/>background refill"]
+    TOP --> EV["top-of-book event"]
+    EV --> HASH["change count<br/>CRC-32 of every change"]
+  end
+  subgraph SLOW["50 MHz"]
+    UART["UART: event lines,<br/>status lines"]
+  end
+  EV -->|"async FIFO"| UART
+  HASH -->|"handshake"| UART
 ```
 
 - **Parsing** is cut-through, one byte per clock with no backpressure, so a
@@ -120,7 +137,8 @@ tcpdump, rebuilds them in that order, and runs the reference book on them
 with the hardware's MoldUDP64 rule (a late message is a duplicate). The
 board matches it exactly: 1,655,466 frames, 729,207 duplicates, 45,278 gaps,
 2,948 changes, hash `6e0f8b00`. The same comparison is what showed that the
-sender, not the board, was reordering.
+sender, not the board, was reordering
+([DESIGN.md section 10](DESIGN.md#10-the-1-gbs-test-when-the-counters-pointed-at-the-sender)).
 
 **Receiving at 125 MHz.** The PHY guarantees each byte only from 2.5 ns
 before to 0.5 ns after its clock edge. The board image captures it with

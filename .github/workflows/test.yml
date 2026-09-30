@@ -1,0 +1,57 @@
+# Model, network and hardware test suites on every push and pull request.
+# The OxCaml compiler and the Jane Street preview packages come from the
+# OxCaml opam repository, pinned to the commit the project was developed
+# against; the switch is cached, so only the first run (or a bump of
+# SWITCH_KEY) builds it. Tests that need the Nasdaq sample or the pcaps made
+# from it skip themselves: the data is not redistributed.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  OPAMYES: "1"
+  OPAMCONFIRMLEVEL: unsafe-yes
+  OX_REPO: git+https://github.com/oxcaml/opam-repository.git#f1bd228dda31430bf6271f0f9adb2e604c6957ca
+  PACKAGES: >-
+    dune.3.24.2
+    core core_unix hardcaml hardcaml_waveterm
+    ppx_hardcaml ppx_jane ppx_expect
+  SWITCH_KEY: oxcaml-5.2.0-f1bd228-v1
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y opam autoconf bubblewrap rsync pkg-config libgmp-dev libffi-dev zlib1g-dev
+
+      - name: Restore the OxCaml switch
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.opam
+          key: ${{ env.SWITCH_KEY }}-${{ runner.os }}
+
+      - name: Build the OxCaml switch
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          opam init --bare --disable-sandboxing --no-setup
+          opam switch create oxcaml --packages ocaml-variants.5.2.0+ox \
+            --repos "ox=$OX_REPO,default"
+          opam install --switch=oxcaml $PACKAGES
+          opam clean --switch=oxcaml --all-switches --download-cache --logs
+
+      - name: Versions
+        run: opam list --switch=oxcaml ocaml-variants dune hardcaml core
+
+      - name: Test
+        run: make test
