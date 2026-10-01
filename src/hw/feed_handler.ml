@@ -52,6 +52,8 @@ module O = struct
     ; msg_last : 'a (* a message's last byte is in the decoder this cycle *)
     ; msg_seq : 'a [@bits 64]
     ; cmd : 'a (* a book command enters the book's FIFO (Latency_monitor) *)
+    ; command : 'a Symbol_filter.Command.t [@rtlmangle "_"] (* that command *)
+    ; book_quiet : 'a (* the book is idle with nothing queued *)
     }
   [@@deriving hardcaml]
 end
@@ -100,5 +102,7 @@ let create ?p ?fifo_capacity scope (i : _ I.t) : _ O.t =
   ; msg_last = front.msg.valid &: front.msg.last
   ; msg_seq = front.msg.seq
   ; cmd = filter.cmd.valid
+  ; command = filter.cmd
+  ; book_quiet = book.quiet
   }
 ;;

@@ -34,7 +34,7 @@ module Top = struct
     [@@deriving hardcaml]
   end
 
-  let create scope (i : _ I.t) : _ O.t =
+  let create ~fast scope (i : _ I.t) : _ O.t =
     let fh =
       Feed_handler.create scope { clock = i.clock; clear = i.clear; cfg = Timing_top.config (); rx = i.rx }
     in
@@ -47,6 +47,7 @@ module Top = struct
     let oe =
       Order_entry.create
         ~rule
+        ?fast:(if fast then Some (fh.command, fh.book_quiet) else None)
         scope
         ~clock:i.clock
         ~clear:i.clear
@@ -60,8 +61,8 @@ end
 
 module Sim = Cyclesim.With_interface (Top.I) (Top.O)
 
-let%expect_test "orders equal the model's, byte for byte; tick-to-trade per order" =
-  let sim = Sim.create (Top.create (Scope.create ~flatten_design:true ())) in
+let run ~fast =
+  let sim = Sim.create (Top.create ~fast (Scope.create ~flatten_design:true ())) in
   let i = Cyclesim.inputs sim
   and o = Cyclesim.outputs sim in
   let cycle = ref 0 in
@@ -158,8 +159,8 @@ let%expect_test "orders equal the model's, byte for byte; tick-to-trade per orde
       ^ String.init 4 ~f:(fun k -> Char.of_int_exn ((fcs lsr (8 * k)) land 0xff)))
   in
   let got = Queue.to_list frames in
-  printf "orders: model %d, hardware %d (dropped %d)\n" (List.length want) (List.length got)
-    (Bits.to_int_trunc !(o.stats.dropped));
+  printf "orders: model %d, hardware %d (fast path %d, dropped %d)\n" (List.length want) (List.length got)
+    (Bits.to_int_trunc !(o.stats.fast)) (Bits.to_int_trunc !(o.stats.dropped));
   printf "frames equal the model's: %b\n" ([%equal: string list] got want);
   (* tick-to-trade: TX_EN rise minus the trigger's last byte *)
   let t2t_want =
@@ -174,11 +175,26 @@ let%expect_test "orders equal the model's, byte for byte; tick-to-trade per orde
   let s = o.stats.t2t in
   let g r = Bits.to_int_trunc !r in
   printf "hardware histogram: count %d p50 %d max %d\n" (g s.count) (g s.p50) (g s.max);
+  ()
+;;
+
+let%expect_test "orders equal the model's, byte for byte; tick-to-trade per order" =
+  print_endline "waiting for the book:";
+  run ~fast:false;
+  print_endline "with the fast path:";
+  run ~fast:true;
   [%expect {|
-    orders: model 41, hardware 41 (dropped 0)
+    waiting for the book:
+    orders: model 41, hardware 41 (fast path 0, dropped 0)
     frames equal the model's: true
     tick-to-trade samples equal the definition: true
     tick-to-trade, cycles: min 19 median 19 max 30
     hardware histogram: count 41 p50 19 max 30
+    with the fast path:
+    orders: model 41, hardware 41 (fast path 32, dropped 0)
+    frames equal the model's: true
+    tick-to-trade samples equal the definition: true
+    tick-to-trade, cycles: min 7 median 7 max 30
+    hardware histogram: count 41 p50 7 max 30
     |}]
 ;;

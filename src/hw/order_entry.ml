@@ -25,6 +25,7 @@ open Signal
 module Stats = struct
   type 'a t =
     { orders : 'a [@bits 32] (* frames sent *)
+    ; fast : 'a [@bits 32] (* of which decided on the fast path *)
     ; dropped : 'a [@bits 32] (* triggers lost to a full queue *)
     ; t2t : 'a Latency_monitor.Stats.t [@rtlmangle "_"]
     }
@@ -52,6 +53,7 @@ let hex_digit n = mux2 (n <:. 10) (uresize n ~width:8 +:. Char.to_int '0') (ures
 let create
   ~(rule : Itch_model.Ouch.Rule.t)
   ?(t2t_offset = 0)
+  ?fast
   scope
   ~clock
   ~clear
@@ -63,8 +65,33 @@ let create
   (* ---- trigger ---- *)
   let ours = event.valid &: (event.slot ==:. rule.slot) in
   let low = (event.ask_shares <>:. 0) &: (event.ask_price <=:. rule.limit) in
-  let seen_low = reg_fb spec ~width:1 ~f:(fun l -> mux2 ours low l) in
+  let seen_low = wire 1 in
   let fire = ours &: low &: ~:seen_low in
+  (* fast path: a sell Add on the rule's symbol at or below the limit makes
+     the ask cross by itself (the new best ask is its price), so when the
+     book is up to date the order can go from the parsed command, without
+     waiting for the book. Same order, same rule; anything else takes the
+     book's event. *)
+  let fast_fire, fast_entry =
+    match fast with
+    | None -> gnd, zero 1
+    | Some ((c : Signal.t Symbol_filter.Command.t), book_quiet) ->
+      ( c.valid
+        &: book_quiet
+        &: ~:(event.valid) (* [seen_low] has absorbed every event *)
+        &: (c.kind ==: Itch_decoder.Kind.const Add)
+        &: (c.slot ==:. rule.slot)
+        &: c.sell
+        &: (c.shares <>:. 0)
+        &: (c.price <=:. rule.limit)
+        &: ~:seen_low
+      , concat_msb
+          [ c.price
+          ; sel_bottom c.seq ~width:seq_bits
+          ; now -:. Feed_handler.command_offset (* its message's last byte *)
+          ] )
+  in
+  assign seen_low (reg_fb spec ~width:1 ~f:(fun l -> mux2 fast_fire vdd (mux2 ours low l)));
   (* ---- queue ---- *)
   let start = wire 1
   and full = wire 1 in
@@ -76,12 +103,17 @@ let create
       ~capacity:queue_capacity
       ~clock
       ~clear
-      ~wr:(fire &: ~:full)
-      ~d:(concat_msb [ event.ask_price; sel_bottom event.seq ~width:seq_bits; message_time ])
+      ~wr:((fire |: fast_fire) &: ~:full)
+      ~d:
+        (mux2
+           fast_fire
+           (uresize fast_entry ~width:(32 + seq_bits + 32))
+           (concat_msb [ event.ask_price; sel_bottom event.seq ~width:seq_bits; message_time ]))
       ~rd:start
   in
   assign full queue.full;
-  let dropped = reg_fb spec ~width:32 ~f:(fun d -> mux2 (fire &: full) (d +:. 1) d) in
+  let dropped = reg_fb spec ~width:32 ~f:(fun d -> mux2 ((fire |: fast_fire) &: full) (d +:. 1) d) in
+  let fast_orders = reg_fb spec ~width:32 ~f:(fun n -> mux2 (fast_fire &: ~:full) (n +:. 1) n) in
   let q_price = select queue.q ~high:(Signal.width queue.q - 1) ~low:(seq_bits + 32) in
   let q_seq = select queue.q ~high:(seq_bits + 31) ~low:32 in
   let q_time = sel_bottom queue.q ~width:32 in
@@ -121,6 +153,7 @@ let create
   ; txd = tx.txd
   ; stats =
       { Stats.orders
+      ; fast = fast_orders
       ; dropped
       ; t2t = Latency_monitor.histogram ~spec ~clock ~valid:tx.sof ~sample:t2t
       }

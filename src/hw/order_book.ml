@@ -88,6 +88,7 @@ module O = struct
   type 'a t =
     { event : 'a Event.t [@rtlmangle "_"]
     ; stats : 'a Stats.t [@rtlmangle "_"]
+    ; quiet : 'a (* idle with nothing queued: the top of book is up to date *)
     }
   [@@deriving hardcaml]
 end
@@ -1065,6 +1066,7 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
       ; debug_state = uresize sm.current ~width:8
       ; debug_fifo_empty = fifo.empty
       }
+  ; quiet = sm.is Idle &: fifo.empty
   }
 ;;
 

@@ -218,6 +218,7 @@ let create
       Order_entry.create
         ~rule
         ~t2t_offset:(8 + if Option.is_some captured then 1 else 0)
+        ~fast:(fh.command, fh.book_quiet)
         scope
         ~clock:rxc
         ~clear:clear_rx
@@ -295,6 +296,7 @@ let create
             the triggering message's last byte on the GMII receive pins to
             TX_EN rising on the GMII transmit pins *)
          [ "osent", oe.stats.orders
+         ; "ofast", oe.stats.fast
          ; "odrop", oe.stats.dropped
          ; "tt", oe.stats.t2t.count
          ; "t50", uresize oe.stats.t2t.p50 ~width:16
