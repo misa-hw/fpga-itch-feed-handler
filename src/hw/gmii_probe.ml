@@ -26,6 +26,8 @@ let create ~taps _scope (i : _ Board_top.I.t) : _ Board_top.O.t =
   ; e_mdc = gnd
   ; e_txen = gnd
   ; e_txer = gnd
+  ; e_txd = zero 8
+  ; e_gtxc = gnd
   ; led = reg spec (tree ~arity:4 ~f:(reduce ~f:( ^: )) (bits_lsb fold) |: g.ready)
   }
 ;;

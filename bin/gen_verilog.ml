@@ -28,10 +28,16 @@ let () =
     let module C = Circuit.With_interface (Board_top.I) (Board_top.O) in
     write ~name:"board_top" (fun scope -> C.create_exn ~name:"board_top" (Board_top.create scope)) file
   | [ _; "board_top_gmii"; taps; file ] ->
-    (* 1 Gb/s image: GMII inputs through IDELAYs of [taps] x 78 ps *)
+    (* 1 Gb/s image: GMII inputs through IDELAYs of [taps] x 78 ps, and order
+       entry with the board's trading rule *)
     let module C = Circuit.With_interface (Board_top.I) (Board_top.O) in
     write ~name:"board_top" (fun scope ->
-      C.create_exn ~name:"board_top" (Board_top.create ~gmii_idelay_taps:(Int.of_string taps) scope))
+      C.create_exn
+        ~name:"board_top"
+        (Board_top.create
+           ~gmii_idelay_taps:(Int.of_string taps)
+           ~order_rule:Itch_model.Ouch.board_rule
+           scope))
       file
   | [ _; "gmii_probe"; taps; file ] ->
     let module C = Circuit.With_interface (Board_top.I) (Board_top.O) in

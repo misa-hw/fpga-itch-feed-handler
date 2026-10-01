@@ -90,3 +90,20 @@ used the image without it.
   chained ones (it failed by 0.211 ns once the monitor was added).
   scripts/board_linerate.sh prints the board's latency (lat, l50, l99,
   l999, lmax in 125 MHz cycles) and requires lat == cmd.
+
+Image with order entry as well (Itch_model.Ouch.board_rule: buy 100 SPY
+when the offer comes down to $300.00; 53 orders on the tracked pcap),
+2026-10-01, same build command. Not yet run on the board.
+  All constraints met: WNS +0.068 ns, WHS +0.016 ns. 18,974 LUTs (30%),
+  14,768 registers (12%).
+  GMII transmit (TXD, TX_EN; datasheet table 64: 2 ns setup, 0 ns hold at
+  GTX_CLK, which the ODDR forwards inverted): setup +1.654 ns,
+  hold +3.688 ns. GMII receive inputs unchanged (+0.444 / +0.450 ns).
+  Simulation of the whole board (tests/hw/test_board.ml, random feeds):
+  27 orders, every frame at the transmit pins equal to the model's;
+  tick-to-trade between the GMII pins 27 to 38 cycles (216 to 304 ns),
+  equal to what the board reports. The gigabit image adds one cycle for
+  its input capture.
+  scripts/board_linerate.sh captures the orders and requires them to equal
+  pcapgen orders on the sent stream, and osent to equal the number
+  captured with odrop = 0.

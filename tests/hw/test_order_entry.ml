@@ -60,24 +60,6 @@ end
 
 module Sim = Cyclesim.With_interface (Top.I) (Top.O)
 
-(* Each random batch uses order references 1..40 and keeps them unique only
-   within itself; give every batch its own range, so no batch adds an order
-   under a reference another batch still has live (outside ITCH's rules,
-   where the hardware and reference books may differ). *)
-let shift_refs (m : Itch.t) ~by =
-  let body : Itch.body =
-    match m.body with
-    | Add_order a -> Add_order { a with order_ref = a.order_ref + by }
-    | Order_executed e -> Order_executed { e with order_ref = e.order_ref + by }
-    | Order_executed_with_price e -> Order_executed_with_price { e with order_ref = e.order_ref + by }
-    | Order_cancel c -> Order_cancel { c with order_ref = c.order_ref + by }
-    | Order_delete d -> Order_delete { order_ref = d.order_ref + by }
-    | Order_replace r -> Order_replace { r with orig_ref = r.orig_ref + by; new_ref = r.new_ref + by }
-    | (Stock_directory _ | Other _) as b -> b
-  in
-  { m with body }
-;;
-
 let%expect_test "orders equal the model's, byte for byte; tick-to-trade per order" =
   let sim = Sim.create (Top.create (Scope.create ~flatten_design:true ())) in
   let i = Cyclesim.inputs sim
@@ -120,11 +102,7 @@ let%expect_test "orders equal the model's, byte for byte; tick-to-trade per orde
   for trial = 0 to 15 do
     let messages =
       Quickcheck.random_value ~seed:(`Deterministic (sprintf "orders %d" trial)) Gen.random_messages
-      |> List.map ~f:(shift_refs ~by:(1000 * trial))
-      (* then empty the book again, so every batch can cross the limit *)
-      |> fun ms ->
-      ms @ List.concat_map [ 1; 2; 3 ] ~f:(fun loc ->
-        List.init 60 ~f:(fun r -> Gen.delete ~loc ((1000 * trial) + r + 1)))
+      |> Gen.batch ~index:trial
     in
     let rec packets ms k =
       match ms with

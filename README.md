@@ -5,7 +5,9 @@ running on a QMTech Wukong board (Xilinx Artix-7 XC7A100T, RTL8211EG
 gigabit PHY). It takes Ethernet frames straight from the PHY, parses
 IPv4/UDP/MoldUDP64/ITCH 5.0 one byte per clock, maintains full-depth order
 books for eight configurable symbols in block RAM, and emits a top-of-book
-event after every book command. An OCaml reference book and a bit-accurate
+event after every book command. A deliberately simple trading rule reacts
+to those events and sends OUCH 5.0 orders back out of the same PHY, and the
+board measures its tick-to-trade latency. An OCaml reference book and a bit-accurate
 model of the hardware's data structures check it at every level, from unit
 tests to the board. [DESIGN.md](DESIGN.md) explains the data structures and
 trade-offs.
@@ -22,6 +24,11 @@ trade-offs.
   one of the 1.74 million book commands in simulation; 41 cycles at p99.9.
   The board image measures the same quantity on chip for every command
   (below); that run on the board is still to be done.
+- **Tick-to-trade: 216 ns to 304 ns between the GMII pins** (27 to 38
+  cycles), from the last byte of the message that triggers an order to the
+  order frame's first byte, with every order frame byte-identical to the
+  model's (simulation of the whole board; the board image measures it on
+  chip too).
 - **Timing closes at 125 MHz** in Vivado, for the core and for the gigabit
   board image, whose GMII inputs are constrained to the PHY datasheet's
   3 ns window.
@@ -47,7 +54,11 @@ flowchart LR
     LVL --> TOP["top 8 levels per side<br/>background refill"]
     TOP --> EV["top-of-book event"]
     EV --> HASH["change count<br/>CRC-32 of every change"]
+    EV --> RULE["trading rule<br/>buy when the ask reaches a limit"]
+    RULE --> OUCH["OUCH 5.0 Enter Order<br/>in a UDP frame"]
+    OUCH --> TXMAC["transmit MAC<br/>preamble, FCS"]
   end
+  TXMAC -->|"GMII out, GTX_CLK forwarded"| PHY
   subgraph SLOW["50 MHz"]
     UART["UART: event lines,<br/>status lines"]
   end
@@ -64,6 +75,11 @@ flowchart LR
 - **Top of book** comes from a small cache per book side: the best eight
   levels, kept sorted. When a cache runs low, a background scan of the level
   table refills it while the book keeps processing commands.
+- **Order entry**: on the configured symbol, when the best offer falls to a
+  limit (the board's: 100 SPY at $300.00), one immediate-or-cancel buy at
+  the offer, once per crossing. The Ethernet/IPv4/UDP header is a constant
+  (zero UDP checksum), so the frame goes straight from registers into the
+  transmit MAC, on the receive clock: no clock crossing on the way out.
 - **Capacity failures** (a full table, an unsupported field value) are
   counted, never silent.
 
@@ -102,9 +118,10 @@ MoldUDP64 packets (`build/tracked.pcap`).
 | Book FIFO peak | 25 / 512 commands |
 | Background cache refills | 4,905; commands waited 10,756 cycles in total |
 | Core at 125 MHz, Vivado ([`timing.txt`](results/timing.txt)) | met, WNS +0.095 ns; 14,543 LUTs (23%), 8,983 FFs (7%), 98 BRAM tiles (73%) |
-| 1 Gb/s board image, Vivado | met, WNS +0.045 ns; GMII inputs +0.44 / +0.45 ns setup / hold |
+| 1 Gb/s board image (with order entry), Vivado | met, WNS +0.068 ns; GMII inputs +0.44 / +0.45 ns, outputs +1.65 / +3.69 ns setup / hold |
 | 1 Gb/s board, whole dataset over a cable | 1,043,727 changes, count and hash equal to the reference |
 | 100 Mb/s board, cable and on-chip self-test | 39 changes, all equal to the model |
+| Orders, whole board in simulation ([`test_board.ml`](tests/hw/test_board.ml)) | 27 of 27 frames at the transmit pins equal to the model's; tick-to-trade 27 to 38 cycles |
 
 Latency runs from the cycle the last byte of a message leaves the MAC to
 the cycle its event is valid. The tail comes from commands that find their
@@ -152,6 +169,17 @@ p99.9 and maximum in the UART status line (`lat`, `l50`, `l99`, `l999`,
 `lmax`); `scripts/board_linerate.sh` prints them. Simulation checks every
 sample and every percentile against the definition used by the Verilator
 replay ([`tests/hw/test_latency.ml`](tests/hw/test_latency.ml)).
+
+**Orders out.** The gigabit image also carries the order entry, with
+its rule built in: buy 100 SPY when the offer comes down to $300.00, which
+fires 53 times on the tracked pcap. `scripts/board_linerate.sh` captures
+the frames the board sends and requires them, in order, to equal the
+model's orders for the stream that was sent (`pcapgen orders`), and prints
+the tick-to-trade the board measured between its GMII pins (`osent`,
+`odrop`, `tt`, `t50`, `t99`, `tmax`). The transmit side runs on the receive
+clock, with GTX_CLK forwarded inverted through an ODDR so the PHY samples
+the IOB output registers mid-cycle, and Vivado checks it against the
+datasheet's 2 ns setup and 0 ns hold. That board run is still to be done.
 
 **Receiving at 125 MHz.** The PHY guarantees each byte only from 2.5 ns
 before to 0.5 ns after its clock edge. The board image captures it with
@@ -256,6 +284,11 @@ openFPGALoader-xpcu -c xilinxPlatformCableUsb fpga/build/board_top_50_selftest.b
   60,000 frames/s. Sustained 1 Gb/s traffic has only been simulated.
 - **Feed recovery:** there is no MoldUDP64 retransmission request or gap
   recovery; duplicates and sequence gaps are counted.
+- **Orders:** the rule is a demonstration, not a strategy: one symbol, one
+  limit, no position or risk limits. OUCH 5.0 messages go out in UDP
+  datagrams, while a real venue takes them over SoupBinTCP. Tick-to-trade
+  is measured between the FPGA's GMII pins and excludes the PHY's own
+  receive and transmit latency.
 - **Checksums:** FCS, IP and UDP checksums do not gate cut-through book
   writes; the MAC counts bad FCS for diagnostics.
 - **Field widths and capacity:** order references up to 32 bits, shares up

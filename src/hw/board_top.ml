@@ -43,6 +43,8 @@ module O = struct
     ; e_mdc : 'a
     ; e_txen : 'a
     ; e_txer : 'a
+    ; e_txd : 'a [@bits 8]
+    ; e_gtxc : 'a (* GMII transmit clock to the PHY *)
     ; led : 'a (* unused on the board; keeps a pin for probing *)
     }
   [@@deriving hardcaml]
@@ -150,6 +152,7 @@ let create
   ?(selftest_delay = 1 lsl 20)
   ?(selftest_on_clk50 = false)
   ?gmii_idelay_taps
+  ?order_rule
   scope
   (i : _ I.t)
   : _ O.t
@@ -203,6 +206,24 @@ let create
       ~offset:Feed_handler.command_offset
       scope
       { clock = rxc; clear = clear_rx; cmd = fh.cmd; event = ev.valid }
+  in
+  (* order entry: the trading rule, OUCH orders out through the PHY. The
+     tick-to-trade is reported between the GMII pins: Order_entry measures it
+     between the MACs, and the pins add a fixed 8 cycles (input register,
+     the receive MAC's FCS delay, output register; measured in
+     tests/hw/test_board.ml), plus 1 for the gigabit capture, whose rising
+     edge register comes one cycle after its BUFIO input register. *)
+  let orders =
+    Option.map order_rule ~f:(fun rule ->
+      Order_entry.create
+        ~rule
+        ~t2t_offset:(8 + if Option.is_some captured then 1 else 0)
+        scope
+        ~clock:rxc
+        ~clear:clear_rx
+        ~event:ev
+        ~message_time:lat.message_time
+        ~now:lat.now)
   in
   let change = ev.valid &: ev.changed in
   let word = event_word ev in
@@ -267,6 +288,19 @@ let create
     ; "l999", uresize lat.stats.p999 ~width:16
     ; "lmax", lat.stats.max
     ]
+    @ (match orders with
+       | None -> []
+       | Some (oe : Order_entry.t) ->
+         (* orders sent and dropped; tick-to-trade in 125 MHz cycles, from
+            the triggering message's last byte on the GMII receive pins to
+            TX_EN rising on the GMII transmit pins *)
+         [ "osent", oe.stats.orders
+         ; "odrop", oe.stats.dropped
+         ; "tt", oe.stats.t2t.count
+         ; "t50", uresize oe.stats.t2t.p50 ~width:16
+         ; "t99", uresize oe.stats.t2t.p99 ~width:16
+         ; "tmax", oe.stats.t2t.max
+         ])
   in
   let snap = List.map counters ~f:(fun (name, s) -> name, reg rs ~enable:take s) in
   let ack_rx = reg_fb rs ~width:1 ~f:(fun a -> mux2 take ~:a a) in
@@ -356,11 +390,28 @@ let create
   in
   ignore ack_seen;
   Signal.assign phy_ready (phy_timer ==:. phy_reset_cycles);
+  (* transmit: output registers in the IO blocks; GTX_CLK forwarded inverted
+     (ODDR), so the PHY samples mid-cycle. Simulation has no ODDR model: the
+     images without GMII capture drive it low. *)
+  let tx_en, tx_d =
+    match orders with
+    | None -> gnd, zero 8
+    | Some oe ->
+      let rin = Reg_spec.create ~clock:rxc () in
+      reg rin oe.txen, reg rin oe.txd
+  in
+  let gtx_clk =
+    match orders, gmii_idelay_taps with
+    | Some _, Some _ -> Gmii_clock.forward_inverted ~clock:rxc
+    | _ -> gnd
+  in
   { O.uart_tx = tx
   ; e_reset = phy_ready
   ; e_mdc = gnd
-  ; e_txen = gnd
+  ; e_txen = tx_en
   ; e_txer = gnd
+  ; e_txd = tx_d
+  ; e_gtxc = gtx_clk
   ; led = link.value
   }
 ;;

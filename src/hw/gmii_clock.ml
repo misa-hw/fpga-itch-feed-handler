@@ -113,3 +113,22 @@ let create ~taps ~clk50 ~clear50 ~e_rxc ~e_rxd ~e_rxdv ~e_rxer =
   in
   { rxc; rxd = capture e_rxd; rx_dv = capture e_rxdv; rx_er = capture e_rxer; ready }
 ;;
+
+(* GMII transmit clock for the PHY: [clock] inverted through an ODDR
+   (instance "gtx_clk_oddr", which the XDC names for the generated clock),
+   so data launched on a rising edge is sampled half a cycle later. *)
+let forward_inverted ~clock =
+  Instantiation.output
+    (Instantiation.create
+       ()
+       ~name:"ODDR"
+       ~instance:"gtx_clk_oddr"
+       ~parameters:
+         [ Parameter.create ~name:"DDR_CLK_EDGE" ~value:(String "OPPOSITE_EDGE")
+         ; Parameter.create ~name:"INIT" ~value:(Int 0)
+         ; Parameter.create ~name:"SRTYPE" ~value:(String "SYNC")
+         ]
+       ~inputs:[ "C", clock; "CE", vdd; "D1", gnd; "D2", vdd; "R", gnd; "S", gnd ]
+       ~outputs:[ "Q", 1 ])
+    "Q"
+;;

@@ -34,6 +34,14 @@ set_input_delay -clock [get_clocks -of_objects [get_ports e_rxc]] -max 5.5 [get_
 set_input_delay -clock [get_clocks -of_objects [get_ports e_rxc]] -min 0.5 [get_ports {e_rxd[*] e_rxdv e_rxer}]
 # capture in the input flip-flops of the IO blocks: fixed, short data path
 set_property IOB TRUE [get_ports {e_rxd[*] e_rxdv e_rxer}]
+# GMII transmit (table 64: TXD and TXEN set up 2 ns before and held 0 ns
+# after GTX_CLK rising). GTX_CLK is the receive clock inverted by an ODDR,
+# so the PHY samples half a cycle after the IOB output registers launch.
+create_generated_clock -name gtx_clk -invert -divide_by 1 \
+  -source [get_pins -hierarchical -filter {NAME =~ *gtx_clk_oddr/C}] [get_ports e_gtxc]
+set_output_delay -clock gtx_clk -max 2.0 [get_ports {e_txd[*] e_txen e_txer}]
+set_output_delay -clock gtx_clk -min 0.0 [get_ports {e_txd[*] e_txen e_txer}]
+set_property IOB TRUE [get_ports {e_txd[*] e_txen}]
 XDC
 fi
 fi

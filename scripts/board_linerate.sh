@@ -30,7 +30,7 @@ test -s "$bit"
 command -v tcpreplay > /dev/null || { echo "tcpreplay is not installed" >&2; exit 1; }
 dune build ./bin/pcapgen.exe
 sudo -v
-sudo systemctl stop itch-capture 2> /dev/null || true
+sudo systemctl stop itch-capture itch-orders 2> /dev/null || true
 if [[ ${PROGRAM:-1} != 0 ]]; then
   openFPGALoader-xpcu -c xilinxPlatformCableUsb "$bit"
   # programming resets the board's PHY; renegotiate once it is out of reset
@@ -54,7 +54,7 @@ stty -F "$uart" 115200 raw -echo cs8 -cstopb -parenb
 timeout 1 cat "$uart" > /dev/null || test "$?" -eq 124
 cat "$uart" > "$out.uart.txt" &
 reader=$!
-trap 'kill $reader 2> /dev/null || true; sudo systemctl stop itch-capture 2> /dev/null || true' EXIT
+trap 'kill $reader 2> /dev/null || true; sudo systemctl stop itch-capture itch-orders 2> /dev/null || true' EXIT
 # wait for a status line proving the board's receive clock runs
 for _ in $(seq 1 20); do
   grep -q '^S1 ' "$out.uart.txt" && break
@@ -65,6 +65,11 @@ grep -q '^S1 ' "$out.uart.txt" || { echo "no S1 status line: the board's receive
 # AppArmor blocks signals to it from some terminals (e.g. VS Code's).
 rm -f "$out.host.pcap"
 since=$(date '+%Y-%m-%d %H:%M:%S')
+# and the board's orders (OUCH in UDP from 02:00:00:00:00:10), whole frames;
+# tcpdump's promiscuous mode keeps these frames addressed to another MAC
+rm -f "$out.orders.pcap"
+sudo systemd-run --quiet --collect --unit=itch-orders \
+  tcpdump -i "$iface" -B 65536 -Z "$USER" -w "$PWD/$out.orders.pcap" 'ether src 02:00:00:00:00:10'
 sudo systemd-run --quiet --collect --unit=itch-capture \
   tcpdump -i "$iface" -B 524288 -s 64 -Z "$USER" -w "$PWD/$out.host.pcap" 'ether dst 01:00:5e:36:0c:6f'
 sleep 2
@@ -74,12 +79,13 @@ sudo tcpreplay --intf1="$iface" "${rate[@]}" ${limit:+--limit="$limit"} --preloa
 # two more status lines after the last frame
 sleep 3
 kill $reader
-sudo systemctl stop itch-capture
+sudo systemctl stop itch-capture itch-orders
 sleep 1
 sudo journalctl --since "$since" -u itch-capture -o cat 2> /dev/null | grep -E 'captured|dropped' | tee "$out.capture.txt" || true
 python3 scripts/rebuild_sent.py "$pcap" "$out.host.pcap" build/sent.pcap "$limit" | tee "$out.sent.txt"
 ./_build/default/bin/pcapgen.exe expect build/sent.pcap -mold-receiver > "$out.expected.txt"
-python3 - "$out.uart.txt" "$out.expected.txt" "$out.sent.txt" "$out.capture.txt" <<'PY'
+./_build/default/bin/pcapgen.exe orders build/sent.pcap -mold-receiver > "$out.orders_expected.txt"
+python3 - "$out.uart.txt" "$out.expected.txt" "$out.sent.txt" "$out.capture.txt" "$out.orders.pcap" "$out.orders_expected.txt" <<'PY'
 import re
 import sys
 board = open(sys.argv[1], encoding="ascii", errors="replace").read().splitlines()
@@ -132,9 +138,33 @@ if b.get("lost") == 0:
     else:
         if len(board_events) != len(model_events):
             bad.append(f"{len(board_events)} board events, {len(model_events)} in the model")
+if "osent" in b:
+    import os, struct
+    got = []
+    if os.path.exists(sys.argv[5]):
+        with open(sys.argv[5], "rb") as f:
+            f.read(24)
+            while len(rec := f.read(16)) == 16:
+                caplen = struct.unpack_from("<I", rec, 8)[0]
+                got.append(f.read(caplen).hex())
+    want_orders = [l for l in open(sys.argv[6]).read().split() if not l.startswith("orders=")]
+    print(f"orders: board sent {b['osent']} (dropped {b['odrop']}), host captured {len(got)}, "
+          f"model {len(want_orders)}; tick-to-trade between the GMII pins, 125 MHz cycles, "
+          f"{b['tt']} orders: p50 {b['t50']}, p99 {b['t99']}, max {b['tmax']} "
+          f"(ns: {8 * b['t50']}, {8 * b['t99']}, {8 * b['tmax']})")
+    if got != want_orders:
+        for k, (x, y) in enumerate(zip(got, want_orders)):
+            if x != y:
+                bad.append(f"order {k} differs from the model's: {x} vs {y}")
+                break
+        else:
+            bad.append(f"{len(got)} orders captured, {len(want_orders)} in the model")
+    if b["osent"] != len(got) or b["odrop"]:
+        bad.append(f"the board sent {b['osent']} orders and dropped {b['odrop']}; the host captured {len(got)}")
 if bad:
     sys.exit("FAIL: " + "; ".join(bad))
 clean = sent["missing"] == 0 and sent["reordered"] == 0
-print("PASS: every top-of-book change matches the reference book on the stream that was sent"
+print("PASS: every top-of-book change" + (" and every order" if "osent" in b else "")
+      + " matches the reference model on the stream that was sent"
       + ("" if clean else " (the sender dropped or reordered frames; see above)"))
 PY

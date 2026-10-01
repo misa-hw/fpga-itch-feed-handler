@@ -196,6 +196,61 @@ let expect =
        printf "chg=%08x hash=%08x\n" !n !hash)
 ;;
 
+(* The orders the board's trading rule sends for a pcap: one line per
+   order, the frame in hex (without its FCS), as Order_entry builds it. *)
+let orders =
+  Command.basic
+    ~summary:"model's expected order frames (the board's trading rule) for a pcap"
+    (let%map_open.Command pcap = anon ("PCAP" %: Filename_unix.arg_type)
+     and symbol = flag "-symbol" (optional_with_default Ouch.board_rule.symbol string) ~doc:"SYM symbol"
+     and limit = flag "-limit" (optional_with_default Ouch.board_rule.limit int) ~doc:"PRICE limit (4 decimals)"
+     and quantity = flag "-quantity" (optional_with_default Ouch.board_rule.quantity int) ~doc:"N shares"
+     and mold_receiver =
+       flag "-mold-receiver" no_arg ~doc:" drop late messages, as the board does (see expect)"
+     and summary_only = flag "-summary" no_arg ~doc:" print only the number of orders" in
+     fun () ->
+       let symbols = [ "QQQ"; "SPY"; "IWM"; "DIA"; "TQQQ"; "SQQQ"; "AMD"; "UVXY" ] in
+       let slot, _ =
+         List.findi symbols ~f:(fun _ s -> String.equal s symbol)
+         |> Option.value_exn ~message:"the symbol must be one of the board's eight"
+       in
+       let book = Book.create symbols in
+       let strategy = Ouch.Strategy.create { slot; symbol; limit; quantity } in
+       let expected = ref None in
+       let accept seq =
+         (not mold_receiver)
+         ||
+         match !expected with
+         | Some e when seq < e -> false
+         | _ ->
+           expected := Some (seq + 1);
+           true
+       in
+       ignore
+         (Pcap.iter pcap ~f:(fun ~ts_ns:_ frame ->
+            match Packet.parse frame with
+            | Error _ -> ()
+            | Ok p ->
+              (match Packet.Mold.of_string p.udp_payload with
+               | Error _ -> ()
+               | Ok mold ->
+                 List.iteri mold.messages ~f:(fun k m ->
+                   let seq = mold.sequence + k in
+                   if accept seq
+                   then
+                     Option.iter (Book.apply book (Itch.of_string m)) ~f:(fun tob ->
+                       Option.iter (Ouch.Strategy.on_tob strategy ~seq tob) ~f:(fun order ->
+                         if not summary_only
+                         then
+                           Packet.frame ~udp_checksum:false Packet.order_endpoints (Ouch.enter_order_to_string order)
+                           |> String.concat_map ~f:(fun c -> sprintf "%02x" (Char.to_int c))
+                           |> print_endline)))))
+          : int);
+       printf "orders=%d\n" strategy.sent)
+;;
+
 let () =
   Command_unix.run
-    (Command.group ~summary:"MoldUDP64 pcap generator" [ "gen", gen; "check", check; "expect", expect ])
+    (Command.group
+       ~summary:"MoldUDP64 pcap generator"
+       [ "gen", gen; "check", check; "expect", expect; "orders", orders ])

@@ -81,3 +81,27 @@ let random_messages =
   in
   go 200 Int.Map.empty [ dir 1 "QQQ"; dir 2 "SPY" ]
 ;;
+
+(* Several [random_messages] batches in one feed: each batch uses order
+   references 1..40, unique only within itself, so batch [index] gets its
+   own range (a live reference added again is outside ITCH's rules, and the
+   hardware and reference books may treat it differently), and ends by
+   deleting all of its orders, so every batch starts from empty books. *)
+let batch ~index messages =
+  let by = 1000 * index in
+  let shift (m : Itch.t) =
+    let body : Itch.body =
+      match m.body with
+      | Add_order a -> Add_order { a with order_ref = a.order_ref + by }
+      | Order_executed e -> Order_executed { e with order_ref = e.order_ref + by }
+      | Order_executed_with_price e -> Order_executed_with_price { e with order_ref = e.order_ref + by }
+      | Order_cancel c -> Order_cancel { c with order_ref = c.order_ref + by }
+      | Order_delete d -> Order_delete { order_ref = d.order_ref + by }
+      | Order_replace r -> Order_replace { r with orig_ref = r.orig_ref + by; new_ref = r.new_ref + by }
+      | (Stock_directory _ | Other _) as b -> b
+    in
+    { m with body }
+  in
+  List.map messages ~f:shift
+  @ List.concat_map [ 1; 2; 3 ] ~f:(fun loc -> List.init 60 ~f:(fun r -> delete ~loc (by + r + 1)))
+;;

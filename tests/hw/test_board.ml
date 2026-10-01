@@ -75,10 +75,11 @@ let send_mii ?(corrupt = false) t frame =
   idle t 12
 ;;
 
-let create ?(mii_mode = false) () =
+let create ?(mii_mode = false) ?order_rule () =
   let scope = Scope.create ~flatten_design:true () in
   let sim =
-    Sim.create (Board_top.create ~mii_mode ~bit_cycles ~second:20_000 ~phy_reset_cycles:8 scope)
+    Sim.create
+      (Board_top.create ~mii_mode ?order_rule ~bit_cycles ~second:20_000 ~phy_reset_cycles:8 scope)
   in
   let t =
     { sim
@@ -249,5 +250,121 @@ let%expect_test "board: MII nibbles at 100 Mb/s, including FCS detection" =
     MII events equal model: true (2)
     frames=00000002 accepted=00000001 fcs=00000001 chg=00000002 hash=0a41f851 lost=00000000
     model chg=00000002 hash=0a41f851
+    |}]
+;;
+
+(* Order entry through the whole board: GMII frames in at the PHY pins,
+   OUCH order frames out at the PHY pins, on random feeds (as in
+   test_order_entry.ml). The frames on e_txd must be the model's, and the
+   tick-to-trade the board reports over the UART must be the one at the pins
+   (the triggering message's last byte on e_rxd to e_txen rising). *)
+let%expect_test "board: orders out of the transmit pins" =
+  let rule = { Ouch.Rule.slot = 0; symbol = "QQQ"; limit = 10_400; quantity = 100 } in
+  let t = create ~order_rule:rule () in
+  let book = Book.create Timing_top.default_symbols in
+  let strategy = Ouch.Strategy.create rule in
+  let expected = Queue.create () and last_byte = Hashtbl.create (module Int) in
+  let wire = Buffer.create 256 and frames = Queue.create () and rises = Queue.create () in
+  let prev_en = ref false in
+  let watch () =
+    let en = Bits.to_bool !(t.o.e_txen) in
+    if en && not !prev_en then Queue.enqueue rises t.cycle;
+    if en then Buffer.add_char wire (Char.of_int_exn (Bits.to_int_trunc !(t.o.e_txd)));
+    if (not en) && !prev_en
+    then (
+      Queue.enqueue frames (Buffer.contents wire);
+      Buffer.clear wire);
+    prev_en := en
+  in
+  let step () =
+    cycle t;
+    watch ()
+  in
+  let next_seq = ref 1 in
+  for trial = 0 to 7 do
+    let messages =
+      Quickcheck.random_value ~seed:(`Deterministic (sprintf "board orders %d" trial)) Gen.random_messages
+      |> Gen.batch ~index:trial
+    in
+    let rec packets ms k =
+      match ms with
+      | [] -> ()
+      | _ ->
+        let now = List.take ms (1 + (k % 4))
+        and rest = List.drop ms (1 + (k % 4)) in
+        let sequence = !next_seq in
+        next_seq := !next_seq + List.length now;
+        List.iteri now ~f:(fun j m ->
+          Option.iter (Book.apply book m) ~f:(fun tob ->
+            Option.iter (Ouch.Strategy.on_tob strategy ~seq:(sequence + j) tob) ~f:(fun order ->
+              Queue.enqueue expected (sequence + j, order))));
+        let raw = List.map now ~f:Itch.to_string in
+        let frame =
+          Packet.frame
+            Packet.default_endpoints
+            (Packet.Mold.to_string
+               { session = "BOARDORDER"; sequence; messages = raw; end_of_session = false })
+        in
+        (* wire offset of each message's last byte: preamble and SFD first *)
+        let ends = Hashtbl.create (module Int) in
+        let pos = ref Packet.first_block_offset in
+        List.iteri raw ~f:(fun j m ->
+          pos := !pos + 2 + String.length m;
+          Hashtbl.set ends ~key:(8 + !pos - 1) ~data:(sequence + j));
+        String.iteri (wire_frame frame) ~f:(fun k c ->
+          t.i.e_rxdv := Bits.vdd;
+          t.i.e_rxd := Bits.of_int_trunc ~width:8 (Char.to_int c);
+          Option.iter (Hashtbl.find ends k) ~f:(fun seq ->
+            Hashtbl.set last_byte ~key:seq ~data:(t.cycle + 1));
+          step ());
+        t.i.e_rxdv := Bits.gnd;
+        for _ = 1 to 12 do
+          step ()
+        done;
+        packets rest (k + 1)
+    in
+    packets messages trial
+  done;
+  t.i.e_rxdv := Bits.gnd;
+  for _ = 1 to 200_000 do
+    step ()
+  done;
+  let want =
+    Queue.to_list expected
+    |> List.map ~f:(fun (_, order) ->
+      let f = Packet.frame ~udp_checksum:false Packet.order_endpoints (Ouch.enter_order_to_string order) in
+      let fcs = Crc32_sw.fcs f in
+      String.make 7 '\x55'
+      ^ "\xd5"
+      ^ f
+      ^ String.init 4 ~f:(fun k -> Char.of_int_exn ((fcs lsr (8 * k)) land 0xff)))
+  in
+  printf "orders: model %d, pins %d\n" (List.length want) (Queue.length frames);
+  printf "frames at the pins equal the model's: %b\n" ([%equal: string list] (Queue.to_list frames) want);
+  let pins =
+    List.map2_exn (Queue.to_list expected) (Queue.to_list rises) ~f:(fun (seq, _) rise ->
+      rise - Hashtbl.find_exn last_byte seq)
+    |> List.sort ~compare:Int.compare
+  in
+  printf "tick-to-trade at the pins, cycles: min %d max %d\n" (List.hd_exn pins) (List.last_exn pins);
+  let lines = String.split_lines (Buffer.contents t.text) in
+  let status =
+    List.filter lines ~f:(fun line ->
+      String.is_prefix line ~prefix:"S" && Option.is_some (status_field line "tmax"))
+    |> List.last_exn
+  in
+  let f name = Int.of_string ("0x" ^ Option.value_exn (status_field status name)) in
+  printf
+    "UART: osent %d odrop %d tt %d t50 %d tmax %d\n"
+    (f "osent")
+    (f "odrop")
+    (f "tt")
+    (f "t50")
+    (f "tmax");
+  [%expect {|
+    orders: model 27, pins 27
+    frames at the pins equal the model's: true
+    tick-to-trade at the pins, cycles: min 27 max 38
+    UART: osent 27 odrop 0 tt 27 t50 27 tmax 38
     |}]
 ;;

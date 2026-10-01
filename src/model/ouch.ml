@@ -63,6 +63,10 @@ module Rule = struct
   [@@deriving sexp]
 end
 
+(* The rule built into the board's 1 Gb/s image: buy 100 SPY when the offer
+   comes down to $300.00. On the tracked pcap it sends 53 orders. *)
+let board_rule = { Rule.slot = 1; symbol = "SPY"; limit = 3_000_000 (* $300.00 *); quantity = 100 }
+
 module Strategy = struct
   type t =
     { rule : Rule.t

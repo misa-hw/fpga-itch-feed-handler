@@ -12,15 +12,21 @@ on:
   pull_request:
   workflow_dispatch:
 
+# one run at a time per branch: a second push waits for the first, which
+# may be building the switch, instead of building it again in parallel
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   OPAMYES: "1"
   OPAMCONFIRMLEVEL: unsafe-yes
   OX_REPO: git+https://github.com/oxcaml/opam-repository.git#f1bd228dda31430bf6271f0f9adb2e604c6957ca
   PACKAGES: >-
     dune.3.24.2
-    core core_unix hardcaml hardcaml_waveterm
+    core core_unix hardcaml hardcaml_waveterm hardcaml_verilator jane_rope
     ppx_hardcaml ppx_jane ppx_expect
-  SWITCH_KEY: oxcaml-5.2.0-f1bd228-v1
+  SWITCH_KEY: oxcaml-5.2.0-f1bd228-v2
 
 jobs:
   test:
@@ -49,7 +55,7 @@ jobs:
 
       - name: Restore the OxCaml switch
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ~/.opam
           key: ${{ env.SWITCH_KEY }}-${{ runner.os }}
@@ -64,6 +70,15 @@ jobs:
           opam clean --download-cache --logs
           rm -rf ~/.opam/oxcaml/.opam-switch/sources ~/.opam/oxcaml/.opam-switch/build
           du -sh ~/.opam
+
+      # saved straight away, so a failing test step does not throw an hour of
+      # compiling away (actions/cache only saves after a successful job)
+      - name: Save the OxCaml switch
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.opam
+          key: ${{ env.SWITCH_KEY }}-${{ runner.os }}
 
       - name: Versions
         run: opam list --switch=oxcaml ocaml-variants dune hardcaml core

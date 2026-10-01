@@ -255,8 +255,8 @@ Bugs found by this process before hardware (the board found three more; see
 `src/hw/timing_top.ml`: WNS +0.095 ns with synthesis retiming,
 ExtraTimingOpt placement and AggressiveExplore physical optimisation and
 routing), using 23% of the LUTs and 73% of the block RAM. The 1 Gb/s board
-image, which adds the MAC, the GMII capture, the latency monitor, the UART
-and the counters, meets it too (WNS +0.045 ns). The refill tournament
+image, which adds the MACs, the GMII capture, the latency monitor, the
+order entry, the UART and the counters, meets it too (WNS +0.068 ns). The refill tournament
 computes each node's runner-up (the largest of two runners-up and the
 loser) with all comparisons in parallel; as two chained compare-and-selects
 it was the board image's critical path. The background refill needed two register
@@ -444,3 +444,47 @@ Two smaller things this run exposed:
   link can take minutes and several speeds to settle; restricting the NIC
   to advertise 1000BASE-T only made it worse. The test restarts
   autonegotiation from the host and waits for 1000 Mb/s.
+
+## 11. Order entry and tick-to-trade
+
+The board can react as well as listen. `src/hw/order_entry.ml` watches the
+book's events and sends an OUCH 5.0 Enter Order back out of the PHY.
+
+- **The rule** (`Itch_model.Ouch.Strategy`, and the same in hardware): for
+  one symbol, when the best offer is present and at or below a limit, buy
+  a fixed quantity at the offer, immediate-or-cancel, once per crossing.
+  The board's: 100 SPY at $300.00, 53 orders on the tracked pcap. It is a
+  demonstration of the path, not a strategy.
+- **The message**: 47 bytes laid out as in the specification's section
+  2.1 (checked field by field in `tests/model/test_ouch.ml`). UserRefNum
+  counts from 1, strictly increasing as OUCH requires; ClOrdID carries the
+  ITCH sequence number of the triggering message.
+- **The frame**: with a zero UDP checksum (allowed over IPv4) the
+  Ethernet, IPv4 and UDP headers do not depend on the order, so the whole
+  header, IP checksum included, is a constant computed by
+  `Net.Packet.frame`. The frame is loaded into the transmit MAC's shift
+  register in one cycle; nothing wide is selected per byte at 125 MHz. A
+  16-deep queue holds triggers while a frame is still going out.
+- **Transmit clocking**: the transmit side runs on the receive clock, so
+  there is no clock crossing between a market-data byte and the order it
+  triggers. GTX_CLK goes to the PHY through an ODDR, inverted, so the PHY
+  samples TXD half a cycle after the IOB output registers launch it; the
+  output constraints use the datasheet's 2 ns setup and 0 ns hold.
+
+**Tick-to-trade** is measured on every order, from the cycle the last byte
+of the triggering message is on the GMII receive pins to the cycle TX_EN
+rises on the transmit pins, into the same hardware histogram as the book
+latency. In simulation of the whole board (`tests/hw/test_board.ml`), 27
+cycles (216 ns) at best and 38 at most, and the board's own figure equals
+the one measured at the pins. Of the 27:
+
+| stage | cycles |
+|---|---|
+| receive pins to the MAC's output stream: input register, and the MAC holding back 4 bytes until it knows they are not the FCS | 7 |
+| message's last byte on that stream to the book's event (the book latency of an Add, its shortest) | 17 |
+| event to TX_EN at the transmit MAC: trigger, queue, start | 2 |
+| TX_EN through the IOB output register to the pin | 1 |
+
+The gigabit image's input capture adds one more cycle (its BUFIO input
+register feeds a falling-edge and then a rising-edge register). The PHY's
+own receive and transmit latency comes on top and is not measured here.
