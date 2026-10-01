@@ -21,17 +21,17 @@ trade-offs.
   produce 1,043,727 top-of-book changes, whose on-chip count and CRC-32 are
   exactly the reference book's
   ([`results/board_gigabit.txt`](results/board_gigabit.txt)).
-- **Latency: 160 ns median, 248 ns at p99** (20 and 31 cycles at 125 MHz),
-  from a message's last byte to its top-of-book event, measured on every
-  one of the 1.74 million book commands in simulation; 41 cycles at p99.9.
-  The board image measures the same quantity on chip for every command
-  (below); that run on the board is still to be done.
-- **Tick-to-trade: 112 ns between the GMII pins** (14 cycles), from the
-  last byte of the message that triggers an order to the order frame's
-  first byte, when the order is decided from the message itself (most
-  orders); up to 376 ns when the book has to be consulted. Every order frame
-  is byte-identical to the model's (simulation of the whole board; the
-  board image measures it on chip too).
+- **Tick-to-trade: 112 ns, measured on the board.** From the last byte of
+  the market-data message that triggers an order, on the FPGA's GMII
+  receive pins, to the order frame's first byte on its transmit pins: 14
+  cycles at 125 MHz for every one of the 53 orders the board's rule sends
+  on the dataset, each byte-identical to the model's order. Waiting for
+  the order book instead took 288 ns median, 384 ns worst
+  ([`results/board_gigabit.txt`](results/board_gigabit.txt)).
+- **Book latency: 160 ns median, 248 ns at p99** (20 and 31 cycles), from a
+  message's last byte to its top-of-book event, measured on chip for each
+  of the 1.74 million book commands, and equal to the cycle-exact
+  simulation.
 - **Timing closes at 125 MHz** in Vivado, for the core and for the gigabit
   board image, whose GMII inputs are constrained to the PHY datasheet's
   3 ns window.
@@ -128,6 +128,8 @@ MoldUDP64 packets (`build/tracked.pcap`).
 | Core at 125 MHz, Vivado ([`timing.txt`](results/timing.txt)) | met, WNS +0.095 ns; 14,543 LUTs (23%), 8,983 FFs (7%), 98 BRAM tiles (73%) |
 | 1 Gb/s board image (with order entry), Vivado | met, WNS +0.016 ns, WHS +0.001 ns; GMII inputs +0.44 / +0.45 ns, outputs +1.65 / +3.69 ns setup / hold |
 | 1 Gb/s board, whole dataset over a cable | 1,043,727 changes, count and hash equal to the reference |
+| Orders on the board, whole dataset | 53 of 53 equal to the model's; tick-to-trade 112 ns pin to pin for every order |
+| Book latency on the board (every command) | p50 20, p99 31, p99.9 40 cycles, as in simulation |
 | 100 Mb/s board, cable and on-chip self-test | 39 changes, all equal to the model |
 | Orders, whole board in simulation ([`test_board.ml`](tests/hw/test_board.ml)) | 27 of 27 frames at the transmit pins equal to the model's; tick-to-trade 13 cycles (21 orders decided from the message), up to 46 |
 
@@ -187,7 +189,8 @@ the tick-to-trade the board measured between its GMII pins (`osent`,
 `odrop`, `tt`, `t50`, `t99`, `tmax`). The transmit side runs on the receive
 clock, with GTX_CLK forwarded inverted through an ODDR so the PHY samples
 the IOB output registers mid-cycle, and Vivado checks it against the
-datasheet's 2 ns setup and 0 ns hold. That board run is still to be done.
+datasheet's 2 ns setup and 0 ns hold. On the board all 53 orders arrived
+at the PC equal to the model's, each 112 ns pin to pin.
 
 **Receiving at 125 MHz.** The PHY guarantees each byte only from 2.5 ns
 before to 0.5 ns after its clock edge. The board image captures it with

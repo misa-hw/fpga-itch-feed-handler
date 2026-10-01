@@ -511,5 +511,11 @@ Orders that need the book took 35 to 46 cycles at the pins in the same
 run: the book's 17 or more cycles, and a full 8-byte preamble once the
 event arrives. The gigabit image's input capture adds one more cycle (its BUFIO
 input register feeds a falling-edge and then a rising-edge register): 14
-cycles, 112 ns. The PHY's own receive and transmit latency comes on top and
-is not measured here.
+cycles, 112 ns.
+
+**On the board** (`results/board_gigabit.txt`), over the whole dataset at
+60,000 frames/s: all 53 orders equal to the model's, and every one took
+exactly 14 cycles, 112 ns, pin to pin. The previous image, which waited
+for the book for every order, measured 36 cycles median and 48 worst (288
+and 384 ns) on the same data. The PHY's own receive and transmit latency
+comes on top and is not measured here.

@@ -34,7 +34,9 @@ def seq(frame):
 
 
 def count(frame):
-    return struct.unpack_from("!H", frame, 42 + 18)[0]
+    # 0xFFFF marks the end-of-session packet, which carries no messages
+    n = struct.unpack_from("!H", frame, 42 + 18)[0]
+    return 0 if n == 0xFFFF else n
 
 
 def main():
