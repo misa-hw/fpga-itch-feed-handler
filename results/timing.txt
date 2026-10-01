@@ -55,3 +55,19 @@ two chained compare-and-selects before), same flow as above:
   (results/board_gigabit.txt)
   Full Verilator replay after the change: identical to
   results/verify_tracked.txt (same events, refills and latencies).
+
+Timing margin (2026-10-01): 1 Gb/s board image, Vivado 2026.1, same flow plus
+opt_design without BRAM power gating (OPT_OPTS="-retarget -propconst -sweep").
+  Before: WNS +0.016 ns, WHS +0.001 ns; a rebuild of nearly the same design
+  closed at +0.038 ns, depending on how synthesis retiming partitioned it.
+  Changes: refill sorter flags computed a cycle ahead (lookahead against each
+  entry's next value; the scan skips the cycle a command is popped), the
+  low-water refill decided in Finish and started from Emit, a two-level
+  replication tree for the receive-domain reset.
+  After:  WNS +0.075 ns, WHS +0.016 ns, 0 failing endpoints: MET
+          endpoints within 0.1 / 0.2 / 0.5 / 1.0 ns of setup: 2 / 11 / 227 / 2,168
+          worst paths: 4 logic levels into order/level BRAM data and address pins
+  GMII inputs +0.444 / +0.450 ns, outputs +1.654 / +3.688 ns (setup / hold)
+  Utilization: 19,708 LUTs (31.1%), 105 BRAM tiles (77.8%)
+  Full Verilator replay: same events and hash; refill timing changes (see
+  results/verify_tracked.txt).

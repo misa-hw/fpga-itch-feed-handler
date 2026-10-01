@@ -378,7 +378,10 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
   let victim = var_reg ~name:"ob_victim" ~w:wb () in
   (* ---- level update (Level_data -> Level_write) ---- *)
   let lv_entry = var_reg ~name:"ob_lv_entry" ~w:Le.width () in
-  let lv_n = var_reg ~name:"ob_lv_n" ~w:shares_bits () in
+  (* what an execution, cancel or delete leaves of the order and of its
+     level, computed in Level_data so Level_write only selects and writes *)
+  let o_left_r = var_reg ~name:"ob_o_left" ~w:shares_bits () in
+  let l_left_r = var_reg ~name:"ob_l_left" ~w:level_shares_bits () in
   (* ---- top-of-book cache ----
      One row per book side in LUT RAM (16 deep, asynchronous read): [k]
      entries of (valid, price, shares), best first. A copy of each row's best
@@ -465,6 +468,7 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
   let drain = var_reg ~name:"ob_drain" ~w:4 () in
   let waiting = var_reg ~name:"ob_waiting" () and w_bs = var_reg ~name:"ob_w_bs" ~w:bs_bits () in
   let low_water = Params.refill_low_water p in
+  let low_r = var_reg ~name:"ob_low" () in
   (* the pending cache operation, as seen by the sorter: computed in
      Cache_prefix, applied in Cache_wr *)
   let so_match = var_reg ~name:"ob_so_match" ~w:k () and so_better = var_reg ~name:"ob_so_better" ~w:k () in
@@ -534,40 +538,82 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
       in
       tournament (List.map (pairs nodes) ~f:reg_node) (reg spec valid)
   in
-  let ((w_v, w_k, w_p, w_s), (sec_v, sec_k)), win_valid = tournament (List.map stage_a ~f:leaf) scan_valid_a in
-  let win_v = w_v &: win_valid in
-  let sec_v = sec_v &: win_valid in
-  (* sorter insert position and eviction *)
-  let s_better = Array.init k ~f:(fun j -> sorter_v.(j).value &: (sorter_k.(j).value >: w_k)) in
+  let ((n_v, n_k, n_p, n_s), (sec_v, sec_k)), n_valid = tournament (List.map stage_a ~f:leaf) scan_valid_a in
+  let sec_v = sec_v &: n_valid in
+  (* The winner reaches the sorter one cycle after the tournament, and its
+     comparisons with the sorter's entries are made during that cycle,
+     against what each entry will hold next: its own value, its upper
+     neighbour's (shifted down) or the winner being inserted now. Inserting
+     then starts from registered flags; compared in the same cycle, the
+     32-bit compares, the duplicate OR and the shift muxes made a path of 10
+     to 12 logic levels whose timing depended on how retiming fell. This
+     relies on nothing else writing the sorter the cycle before a winner:
+     winners only arrive while scan rows are in flight, and the cache
+     operations ([Cache_wr]) and [start_scan] never overlap them (see
+     [scan_ok]). *)
+  let win_v_r = var_reg ~name:"ob_win_v" () in
+  let w_k_r = var_reg ~name:"ob_win_k" ~w:32 () in
+  let w_p_r = var_reg ~name:"ob_win_p" ~w:price_bits () in
+  let w_s_r = var_reg ~name:"ob_win_s" ~w:level_shares_bits () in
+  let win_better_r = Array.init k ~f:(fun j -> var_reg ~name:(sprintf "ob_win_better_%d" j) ()) in
+  let win_dup_r = Array.init k ~f:(fun j -> var_reg ~name:(sprintf "ob_win_dup_%d" j) ()) in
+  let any_dup_r = var_reg ~name:"ob_win_any_dup" () in
+  let win_v = win_v_r.value and w_k = w_k_r.value and w_p = w_p_r.value and w_s = w_s_r.value in
+  (* sorter insert position and eviction, from the registered flags *)
+  let s_better = Array.map win_better_r ~f:(fun r -> r.value) in
+  let w_dup = Array.map win_dup_r ~f:(fun r -> r.value) in
+  let any_w_dup = any_dup_r.value in
   let s_full = sorter_v.(k - 1).value in
-  (* a level already in the sorter (a concurrent Add put it there, or the
-     scan re-reads a row it changed) is updated, not inserted twice *)
-  let w_dup = Array.init k ~f:(fun j -> sorter_v.(j).value &: (sorter_p.(j).value ==: w_p)) in
-  let any_w_dup = Array.to_list w_dup |> List.reduce_exn ~f:( |: ) in
   let evict_v = s_full &: win_v &: ~:any_w_dup in
   let evict_k = mux2 s_better.(k - 1) w_k sorter_k.(k - 1).value in
-  let pipeline_depth = 3 + Int.ceil_log2 (2 * ways) in
+  let pipeline_depth = 4 + Int.ceil_log2 (2 * ways) in
+  (* the flags for the next winner: compare it with every entry, and with
+     the winner being inserted, then pick per entry by what the entry
+     becomes this cycle *)
+  let lookahead =
+    let gt_self = Array.init k ~f:(fun j -> sorter_v.(j).value &: (sorter_k.(j).value >: n_k)) in
+    let eq_self = Array.init k ~f:(fun j -> sorter_v.(j).value &: (sorter_p.(j).value ==: n_p)) in
+    let gt_win = w_k >: n_k and eq_win = w_p ==: n_p in
+    let inserting = win_v &: ~:any_w_dup in
+    let next j =
+      let take = (if j = 0 then vdd else s_better.(j - 1)) &: ~:(s_better.(j)) in
+      let shift = if j = 0 then gnd else ~:(s_better.(j - 1)) in
+      let pick self prev win =
+        mux2 (inserting &: take) win (mux2 (inserting &: shift) (if j = 0 then gnd else prev) self)
+      in
+      ( pick gt_self.(j) (if j = 0 then gnd else gt_self.(j - 1)) gt_win
+      , pick eq_self.(j) (if j = 0 then gnd else eq_self.(j - 1)) eq_win )
+    in
+    let flags = List.init k ~f:next in
+    [ win_v_r <-- (n_v &: n_valid)
+    ; w_k_r <-- n_k
+    ; w_p_r <-- n_p
+    ; w_s_r <-- n_s
+    ; any_dup_r <-- (List.map flags ~f:snd |> List.reduce_exn ~f:( |: ))
+    ]
+    @ List.concat
+        (List.mapi flags ~f:(fun j (b, d) -> [ win_better_r.(j) <-- b; win_dup_r.(j) <-- d ]))
+  in
   (* sorter update for a winner: entries better than it stay, it goes at the
-     first position where the entry is not better, the rest shift down *)
-  let sorter_updates =
-    List.concat
-      (List.init k ~f:(fun j ->
-         let take_winner = (if j = 0 then vdd else s_better.(j - 1)) &: ~:(s_better.(j)) in
-         when_
-           take_winner
-           [ sorter_v.(j) <-- vdd; sorter_k.(j) <-- w_k; sorter_p.(j) <-- w_p; sorter_s.(j) <-- w_s ]
-         ::
-         (if j = 0
-          then []
-          else
-            [ when_
-                ~:(s_better.(j - 1))
-                [ sorter_v.(j) <-- sorter_v.(j - 1).value
-                ; sorter_k.(j) <-- sorter_k.(j - 1).value
-                ; sorter_p.(j) <-- sorter_p.(j - 1).value
-                ; sorter_s.(j) <-- sorter_s.(j - 1).value
-                ]
-            ])))
+     first position where the entry is not better, the rest shift down;
+     with a duplicate, only the matching entry's shares change *)
+  let entry_updates j =
+    let take_winner = (if j = 0 then vdd else s_better.(j - 1)) &: ~:(s_better.(j)) in
+    when_
+      take_winner
+      [ sorter_v.(j) <-- vdd; sorter_k.(j) <-- w_k; sorter_p.(j) <-- w_p; sorter_s.(j) <-- w_s ]
+    ::
+    (if j = 0
+     then []
+     else
+       [ when_
+           ~:(s_better.(j - 1))
+           [ sorter_v.(j) <-- sorter_v.(j - 1).value
+           ; sorter_k.(j) <-- sorter_k.(j - 1).value
+           ; sorter_p.(j) <-- sorter_p.(j - 1).value
+           ; sorter_s.(j) <-- sorter_s.(j - 1).value
+           ]
+       ])
   in
   let discard_v, discard_k = vmax (disc_v.value, disc_k.value) (sec_v, sec_k) in
   let evicted_v, evicted_k = vmax (ev_v.value, ev_k.value) (pe_v.value, pe_k.value) in
@@ -589,7 +635,12 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
      write it back. Rows in flight land within [pipeline_depth] cycles, before
      any following command's cache update (>= 8 cycles after its pop), so a
      concurrent change is always applied to the sorter after the stale row. *)
-  let scan_ok = sm.is Idle |: sm.is Finish |: sm.is Emit |: sm.is Wait_refill in
+  (* Not on the cycle Idle pops a command: a row read then lands, through
+     the tournament and the winner's lookahead stage, 4 + log2(2 * ways)
+     cycles later, one too late for that command's [Cache_prefix] (7 cycles
+     after the pop), which must see the sorter with every row applied. *)
+  let popping = sm.is Idle &: ~:(scan_done.value) &: ~:(fifo.empty) in
+  let scan_ok = (sm.is Idle &: ~:popping) |: sm.is Finish |: sm.is Emit |: sm.is Wait_refill in
   let issuing = scan_active.value &: ~:(scan_done.value) &: (msb scan_idx.value ==:. 0) &: scan_ok in
   let scan_addr = sel_bottom scan_idx.value ~width:lb in
   compile
@@ -605,13 +656,11 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
         [ drain <-- drain.value +:. 1
         ; when_ (drain.value ==:. pipeline_depth + 2) [ scan_done <-- vdd ]
         ]
+    ; proc lookahead
     ; when_
         win_v
-        [ if_
-            any_w_dup
-            (List.init k ~f:(fun j -> when_ w_dup.(j) [ sorter_s.(j) <-- w_s ]))
-            sorter_updates
-        ]
+        (List.init k ~f:(fun j ->
+           if_ any_w_dup [ when_ w_dup.(j) [ sorter_s.(j) <-- w_s ] ] (entry_updates j)))
     ; when_ sec_v [ disc_v <-- discard_v; disc_k <-- discard_k ]
     ; pe_v <-- evict_v
     ; pe_k <-- evict_k
@@ -801,20 +850,27 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
              let entry = mux way (split_row (mux2 bank (lrow 1) (lrow 0)) ~ways ~entry_width:Le.width) in
              let everything = kind_is Delete c_kind.value |: kind_is Replace c_kind.value in
              let req = c_shares.value in
-             let n =
-               mux2
-                 (everything |: (req >=: uresize o_shares.value ~width:32))
-                 o_shares.value
-                 (sel_bottom req ~width:shares_bits)
-             in
-             [ lv_entry <-- entry; lv_n <-- n; sm.set_next Level_write ]) )
+             (* n = min (order's shares, request), or everything. One
+                subtraction gives both "request >= order" (its borrow, or
+                zero) and what is left; the level's two candidates are
+                subtracted in parallel *)
+             let o32 = uresize o_shares.value ~width:33 in
+             let diff = o32 -: uresize req ~width:33 in
+             let all = everything |: msb diff |: (diff ==:. 0) in
+             let l_shares_e = (Le.unpack entry).shares in
+             let l_all = l_shares_e -: uresize o_shares.value ~width:level_shares_bits in
+             let l_part = l_shares_e -: uresize (sel_bottom req ~width:shares_bits) ~width:level_shares_bits in
+             [ lv_entry <-- entry
+             ; o_left_r <-- mux2 all (zero shares_bits) (sel_bottom diff ~width:shares_bits)
+             ; l_left_r <-- mux2 all l_all l_part
+             ; sm.set_next Level_write
+             ]) )
         ; ( Level_write
           , (let bank = msb o_ptr.value and way = sel_bottom o_ptr.value ~width:wb in
              let bucket = select o_ptr.value ~high:(ptr_bits p - 2) ~low:wb in
              let l = Le.unpack lv_entry.value in
-             let n = lv_n.value in
-             let o_left = o_shares.value -: n in
-             let l_left = l.shares -: uresize n ~width:level_shares_bits in
+             let o_left = o_left_r.value in
+             let l_left = l_left_r.value in
              let new_o =
                mux2 (o_left ==:. 0) (zero oe_w)
                  (Oe.pack { valid = vdd; oref = key_ref.value; ptr = o_ptr.value; shares = o_left })
@@ -976,9 +1032,10 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
                  ((cached ==:. 0) &: (nlevels_of_bs <>:. 0))
                  [ (* the best level is unknown until this side is refilled *)
                    w_bs <-- bs.value; waiting <-- vdd; sm.set_next Wait_refill ]
-                 [ when_
-                     ((cached <=:. low_water) &: (nlevels_of_bs >: cached) &: ~:(scan_active.value))
-                     (start_scan bs.value)
+                 [ (* a low cache starts a refill, from [Emit]: reading the
+                      cache row, counting it and comparing the count was too
+                      long a path to also start the scan in this cycle *)
+                   low_r <-- ((cached <=:. low_water) &: (nlevels_of_bs >: cached) &: ~:(scan_active.value))
                  ; sm.set_next Emit
                  ]
              ]) )
@@ -1028,7 +1085,9 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
              ]) )
         ; ( Emit
           , (let now = tob_of_slot c_slot.value in
-             [ ev.valid <-- vdd
+             [ when_ low_r.value (start_scan bs.value)
+             ; low_r <-- gnd
+             ; ev.valid <-- vdd
              ; ev.changed <-- (now <>: tob_before.value)
              ; ev.seq <-- c_seq.value
              ; ev.slot <-- c_slot.value

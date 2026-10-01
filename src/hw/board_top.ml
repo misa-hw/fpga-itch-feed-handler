@@ -77,8 +77,11 @@ let rx_domain_clear ~clock ~reset_n ~phy_ready =
     reg_fb r ~width:9 ~f:(fun c -> mux2 ~:ready (zero 9) (mux2 (msb c) c (c +:. 1)))
   in
   (* this reset reaches most of the receive domain's flip-flops: let Vivado
-     replicate it next to its loads *)
+     replicate it next to its loads, as a two-level tree (one source driving
+     ~180 replicas across the chip took 7 ns of routing) *)
   reg r (domain_clear ~clock ~reset_n |: ~:(msb settled))
+  |> Fn.flip Signal.add_attribute (Rtl_attribute.Vivado.max_fanout 16)
+  |> reg r
   |> Fn.flip Signal.add_attribute (Rtl_attribute.Vivado.max_fanout 64)
 ;;
 

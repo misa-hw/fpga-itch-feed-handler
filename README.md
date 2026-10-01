@@ -121,12 +121,12 @@ MoldUDP64 packets (`build/tracked.pcap`).
 | Measured | Result |
 | --- | --- |
 | Full replay, simulation ([`verify_tracked.txt`](results/verify_tracked.txt)) | 1,740,696 book commands, 1,043,727 changes, 0 mismatches, 0 overflows |
-| Event latency, 125 MHz cycles | p50 20, p99 31, p99.9 41, max 2,739; 117 commands (0.0067%) over 64 |
+| Event latency, 125 MHz cycles | p50 20, p99 31, p99.9 41, max 2,761; 118 commands (0.0068%) over 64 |
 | Peak table occupancy | 27,573 / 32,768 orders; 7,633 / 16,384 levels |
 | Book FIFO peak | 25 / 512 commands |
-| Background cache refills | 4,905; commands waited 10,756 cycles in total |
+| Background cache refills | 4,903; commands waited 10,902 cycles in total |
 | Core at 125 MHz, Vivado ([`timing.txt`](results/timing.txt)) | met, WNS +0.095 ns; 14,543 LUTs (23%), 8,983 FFs (7%), 98 BRAM tiles (73%) |
-| 1 Gb/s board image (with order entry), Vivado | met, WNS +0.016 ns, WHS +0.001 ns; GMII inputs +0.44 / +0.45 ns, outputs +1.65 / +3.69 ns setup / hold |
+| 1 Gb/s board image (with order entry), Vivado | met, WNS +0.075 ns, WHS +0.016 ns; GMII inputs +0.44 / +0.45 ns, outputs +1.65 / +3.69 ns setup / hold |
 | 1 Gb/s board, whole dataset over a cable | 1,043,727 changes, count and hash equal to the reference |
 | Orders on the board, whole dataset | 53 of 53 equal to the model's; tick-to-trade 112 ns pin to pin for every order |
 | Book latency on the board (every command) | p50 20, p99 31, p99.9 40 cycles, as in simulation |
@@ -243,8 +243,9 @@ them):
 
 ```bash
 dune exec bin/gen_verilog.exe -- board_top_gmii 26 fpga/build/board_top_gmii.v
-SYNTH_OPTS=-retiming PLACE_DIRECTIVE=ExtraTimingOpt PHYS_DIRECTIVE=AggressiveExplore \
-  ROUTE_DIRECTIVE=AggressiveExplore ./fpga/vivado_build.sh fpga/build/board_top_gmii.v fpga/build/vivado_gmii 8
+SYNTH_OPTS=-retiming OPT_OPTS="-retarget -propconst -sweep" PLACE_DIRECTIVE=ExtraTimingOpt \
+  PHYS_DIRECTIVE=AggressiveExplore ROUTE_DIRECTIVE=AggressiveExplore \
+  ./fpga/vivado_build.sh fpga/build/board_top_gmii.v fpga/build/vivado_gmii 8   # 8: the receive clock period, ns
 cp fpga/build/vivado_gmii/board_top.bit fpga/build/board_top_gmii.bit
 PPS=60000 ./scripts/fpga_connect.sh   # program, replay the pcap, compare; omit PPS for top speed
 ./scripts/fpga_disconnect.sh          # after unplugging: eno1 back to NetworkManager

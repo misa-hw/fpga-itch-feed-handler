@@ -161,9 +161,9 @@ change to the design.
     already running then, its result can be empty too (it may have
     discarded the levels that are now best), so the command starts a fresh
     scan.
-  - On the full replay: 4,905 refills, 10,756 cycles in total that commands
+  - On the full replay: 4,903 refills, 10,902 cycles in total that commands
     spent waiting, p99 latency 31 cycles (was 672), p99.9 41 (was 2,078),
-    maximum 2,739 (was 6,016). Starting at 2 of 8 instead of 4 waited
+    maximum 2,761 (was 6,016). Starting at 2 of 8 instead of 4 waited
     36,411 cycles. The architectural model starts refills at the same point
     but completes them at once; the property tests check that the RTL equals
     it event by event with 0, 3 and 11 idle cycles between commands.
@@ -256,8 +256,32 @@ Bugs found by this process before hardware (the board found three more; see
 ExtraTimingOpt placement and AggressiveExplore physical optimisation and
 routing), using 23% of the LUTs and 73% of the block RAM. The 1 Gb/s board
 image, which adds the MACs, the GMII capture, the latency monitor, the
-order entry, the UART and the counters, meets it too (WNS +0.016 ns, WHS
-+0.001 ns: thin, but met at the worst-case corners). The refill tournament
+order entry, the UART and the counters, meets it too: WNS +0.075 ns, WHS
++0.016 ns, two endpoints within 0.1 ns, and the worst paths four logic
+levels into BRAM pins, mostly routing.
+
+That image had first closed at WNS +0.016 ns, WHS +0.001 ns, and the margin
+turned out to depend on how synthesis retiming happened to partition the
+design: the same order book closed at +0.038 ns in one run and not at all
+in another. Two paths were long in the logic itself, not just the routing:
+- **The refill sorter.** Inserting a scan winner compared it with every
+  entry (32-bit keys, 32-bit prices for duplicates), ORed the duplicate
+  matches and drove the shift multiplexers, 10 to 12 levels in one cycle.
+  The winner now reaches the sorter one cycle later, and its comparisons
+  are made during that cycle against what each entry will hold next (its
+  own value, its upper neighbour's, or the winner being inserted), so
+  inserting starts from registered flags. Rows land one cycle later, so the
+  scan no longer issues a read on the cycle a command is popped: its cache
+  update must see every row applied.
+- **Starting a refill.** Finish read the cache row, counted its entries,
+  compared the count with the low-water mark and started the scan in the
+  same cycle; the decision is now registered there and the scan starts
+  from Emit, which costs nothing on the event's path.
+Vivado's BRAM power optimisation is also left out (`OPT_OPTS`): it gates
+each BRAM enable through a LUT, a level on paths that are already mostly
+routing. The full replay is unchanged apart from refill timing (section 6).
+
+The refill tournament
 computes each node's runner-up (the largest of two runners-up and the
 loser) with all comparisons in parallel; as two chained compare-and-selects
 it was the board image's critical path. The background refill needed two register

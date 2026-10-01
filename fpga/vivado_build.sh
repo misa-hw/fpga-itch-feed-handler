@@ -7,6 +7,9 @@
 # TOP=timing_top XDC=fpga/timing_top.xdc: the core timing wrapper instead of
 # the board (its XDC is used as is; no bitstream is needed but one is written).
 # SYNTH_OPTS: extra synth_design options (e.g. "-retiming").
+# OPT_OPTS: opt_design options (default: all of opt_design's defaults; e.g.
+#   "-retarget -propconst -sweep" leaves out BRAM power gating, which puts a
+#   LUT on each BRAM enable).
 # PLACE_DIRECTIVE / PHYS_DIRECTIVE / ROUTE_DIRECTIVE: Vivado strategy
 # directives (default: Default); a post-route phys_opt runs if setup fails.
 set -euo pipefail
@@ -49,7 +52,7 @@ cat > "$out/build.tcl" <<TCL
 read_verilog $(realpath "$v")
 read_xdc $(realpath "$out")/board.xdc
 synth_design -top $top -part xc7a100tfgg676-1 ${SYNTH_OPTS:-}
-opt_design
+opt_design ${OPT_OPTS:-}
 place_design -directive ${PLACE_DIRECTIVE:-Default}
 phys_opt_design -directive ${PHYS_DIRECTIVE:-Default}
 route_design -directive ${ROUTE_DIRECTIVE:-Default}
@@ -58,6 +61,13 @@ report_timing_summary -file $(realpath "$out")/timing.rpt
 report_timing -max_paths 50 -nworst 1 -file $(realpath "$out")/paths.rpt
 report_timing -from [all_inputs] -to [all_registers] -max_paths 12 -nworst 1 -delay_type min_max -file $(realpath "$out")/inputs.rpt
 report_utilization -file $(realpath "$out")/utilization.rpt
+# how much of the design is near-critical, not just the single worst path
+set hist [open $(realpath "$out")/slack_histogram.txt w]
+foreach t {0.1 0.2 0.3 0.5 1.0} {
+  puts \$hist "setup endpoints with slack below \$t ns: [llength [get_timing_paths -setup -max_paths 100000 -nworst 1 -slack_lesser_than \$t]]"
+}
+close \$hist
+write_checkpoint -force $(realpath "$out")/routed.dcp
 write_bitstream -force $(realpath "$out")/$top.bit
 TCL
 (cd "$out" && "$vivado" -mode batch -nojournal -log vivado.log -source build.tcl > /dev/null)
