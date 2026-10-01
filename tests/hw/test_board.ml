@@ -264,12 +264,14 @@ let%expect_test "board: orders out of the transmit pins" =
   let book = Book.create Timing_top.default_symbols in
   let strategy = Ouch.Strategy.create rule in
   let expected = Queue.create () and last_byte = Hashtbl.create (module Int) in
-  let wire = Buffer.create 256 and frames = Queue.create () and rises = Queue.create () in
-  let prev_en = ref false in
+  let wire = Buffer.create 256 and frames = Queue.create () and firsts = Queue.create () in
+  let prev_en = ref false and after_sfd = ref false in
   let watch () =
     let en = Bits.to_bool !(t.o.e_txen) in
-    if en && not !prev_en then Queue.enqueue rises t.cycle;
-    if en then Buffer.add_char wire (Char.of_int_exn (Bits.to_int_trunc !(t.o.e_txd)));
+    let byte = Bits.to_int_trunc !(t.o.e_txd) in
+    if en && !after_sfd then Queue.enqueue firsts t.cycle;
+    after_sfd := en && byte = 0xd5 && String.for_all (Buffer.contents wire) ~f:(Char.equal '\x55');
+    if en then Buffer.add_char wire (Char.of_int_exn byte);
     if (not en) && !prev_en
     then (
       Queue.enqueue frames (Buffer.contents wire);
@@ -334,16 +336,29 @@ let%expect_test "board: orders out of the transmit pins" =
     |> List.map ~f:(fun (_, order) ->
       let f = Packet.frame ~udp_checksum:false Packet.order_endpoints (Ouch.enter_order_to_string order) in
       let fcs = Crc32_sw.fcs f in
-      String.make 7 '\x55'
-      ^ "\xd5"
-      ^ f
-      ^ String.init 4 ~f:(fun k -> Char.of_int_exn ((fcs lsr (8 * k)) land 0xff)))
+      f ^ String.init 4 ~f:(fun k -> Char.of_int_exn ((fcs lsr (8 * k)) land 0xff)))
   in
-  printf "orders: model %d, pins %d\n" (List.length want) (Queue.length frames);
-  printf "frames at the pins equal the model's: %b\n" ([%equal: string list] (Queue.to_list frames) want);
+  (* bursts of preamble only are cancelled pre-formed preambles; frames have
+     at least 7 preamble bytes, the SFD, then the model's frame and FCS *)
+  let bursts, sent =
+    List.partition_tf (Queue.to_list frames) ~f:(fun w -> String.for_all w ~f:(Char.equal '\x55'))
+  in
+  let got =
+    List.map sent ~f:(fun w ->
+      let pre = String.take_while w ~f:(Char.equal '\x55') in
+      let rest = String.drop_prefix w (String.length pre) in
+      if String.length pre >= 7 && String.is_prefix rest ~prefix:"\xd5"
+      then String.drop_prefix rest 1
+      else "bad preamble")
+  in
+  printf "orders: model %d, pins %d; cancelled pre-formed preambles %d\n" (List.length want) (List.length got)
+    (List.length bursts);
+  printf "frames at the pins equal the model's: %b\n" ([%equal: string list] got want);
+  (* tick-to-trade at the pins: the triggering message's last byte on e_rxd
+     to the order frame's first byte on e_txd *)
   let pins =
-    List.map2_exn (Queue.to_list expected) (Queue.to_list rises) ~f:(fun (seq, _) rise ->
-      rise - Hashtbl.find_exn last_byte seq)
+    List.map2_exn (Queue.to_list expected) (Queue.to_list firsts) ~f:(fun (seq, _) first ->
+      first - Hashtbl.find_exn last_byte seq)
     |> List.sort ~compare:Int.compare
   in
   printf "tick-to-trade at the pins, cycles: min %d max %d\n" (List.hd_exn pins) (List.last_exn pins);
@@ -355,16 +370,17 @@ let%expect_test "board: orders out of the transmit pins" =
   in
   let f name = Int.of_string ("0x" ^ Option.value_exn (status_field status name)) in
   printf
-    "UART: osent %d odrop %d tt %d t50 %d tmax %d\n"
+    "UART: osent %d ofast %d odrop %d tt %d t50 %d tmax %d\n"
     (f "osent")
+    (f "ofast")
     (f "odrop")
     (f "tt")
     (f "t50")
     (f "tmax");
   [%expect {|
-    orders: model 27, pins 27
+    orders: model 27, pins 27; cancelled pre-formed preambles 16
     frames at the pins equal the model's: true
-    tick-to-trade at the pins, cycles: min 15 max 38
-    UART: osent 27 odrop 0 tt 27 t50 15 tmax 38
+    tick-to-trade at the pins, cycles: min 13 max 46
+    UART: osent 27 ofast 21 odrop 0 tt 27 t50 13 tmax 46
     |}]
 ;;

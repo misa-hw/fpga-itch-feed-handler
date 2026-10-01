@@ -107,3 +107,16 @@ when the offer comes down to $300.00; 53 orders on the tracked pcap),
   scripts/board_linerate.sh captures the orders and requires them to equal
   pcapgen orders on the sent stream, and osent to equal the number
   captured with odrop = 0.
+
+Image with the order-entry fast path (decided from the message stream,
+preamble pre-formed), 2026-10-01, same build command. Not yet run on the
+board.
+  All constraints met: WNS +0.016 ns, WHS +0.001 ns (thin but met at the
+  worst-case corners). 19,825 LUTs (31%), 14,987 registers (12%).
+  GMII outputs +1.654 / +3.688 ns, inputs +0.444 / +0.450 ns.
+  Simulation of the whole board: 27 orders equal to the model's, 21 of
+  them decided from the message (16 pre-formed preambles cancelled);
+  tick-to-trade between the GMII pins, to the order frame's first byte:
+  13 cycles (104 ns) on the fast path, up to 46 through the book; the
+  board's own figure equals the pins'. The gigabit image adds 1 cycle for
+  its input capture: 14 cycles, 112 ns.

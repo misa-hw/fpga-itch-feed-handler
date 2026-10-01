@@ -5,7 +5,9 @@
    - Trigger: on a book event for the rule's slot, "the best ask is present
      and at or below the limit". An order fires when that becomes true, so
      once per crossing ([seen_low] is the previous value; registers reset to
-     0, so the rule starts armed, as in the model).
+     0, so the rule starts armed, as in the model). With [fast], the common
+     case is decided from the message stream itself, before the book (see
+     below).
    - A trigger queues (ask price, triggering ITCH sequence number, the time
      its message's last byte was on the receive MAC stream) while a frame
      is going out; a full queue drops the order and counts it.
@@ -14,7 +16,7 @@
      47-byte Enter Order: UserRefNum counts orders from 1, ClOrdID carries
      the triggering sequence number (Itch_model.Ouch.cl_ord_id_of_seq).
    - Tick-to-trade: from the triggering message's last byte on the receive
-     MAC stream to the cycle TX_EN rises at the transmit MAC, plus
+     MAC stream to the order frame's first byte at the transmit MAC, plus
      [t2t_offset] (the board adds its fixed pin-to-MAC delays), into the
      same histogram as the book latency. *)
 
@@ -67,29 +69,76 @@ let create
   let low = (event.ask_shares <>:. 0) &: (event.ask_price <=:. rule.limit) in
   let seen_low = wire 1 in
   let fire = ours &: low &: ~:seen_low in
-  (* fast path: a sell Add on the rule's symbol at or below the limit makes
-     the ask cross by itself (the new best ask is its price), so when the
-     book is up to date the order can go from the parsed command, without
-     waiting for the book. Same order, same rule; anything else takes the
-     book's event. *)
-  let fast_fire, fast_entry =
+  (* Fast path. For this rule a sell Add on the rule's symbol at or below the
+     limit makes the ask cross by itself (the new best ask is its price), so
+     when the book is up to date (idle, nothing queued, no event in flight,
+     the rule armed) the order can go without waiting for the book. A small
+     detector reads the MoldUDP64 message stream directly and decides on the
+     message's last byte, its price compared as that byte arrives:
+     - type 'A' or 'F', the rule's symbol (its locate, from the symbol
+       filter), side 'S', shares not zero, price at or below the limit;
+     - from byte 23 (shares complete), such a message makes the transmit
+       MAC pre-form the preamble, so the order's SFD can follow the
+       decision directly; if the price turns out above the limit, the
+       preamble is cancelled before any SFD, which is not a frame.
+     Same order, same rule; anything else takes the book's event, and the
+     event of a fast-path order does not fire again. *)
+  let tx_busy = wire 1
+  and tx_holding = wire 1
+  and queue_empty = wire 1 in
+  let fast_fire, fast_entry, prestart, cancel =
     match fast with
-    | None -> gnd, zero 1
-    | Some ((c : Signal.t Symbol_filter.Command.t), book_quiet) ->
-      ( c.valid
-        &: book_quiet
-        &: ~:(event.valid) (* [seen_low] has absorbed every event *)
-        &: (c.kind ==: Itch_decoder.Kind.const Add)
-        &: (c.slot ==:. rule.slot)
-        &: c.sell
-        &: (c.shares <>:. 0)
-        &: (c.price <=:. rule.limit)
-        &: ~:seen_low
+    | None -> gnd, zero 1, gnd, gnd
+    | Some ((m : Signal.t Stream.Message.t), locate, mapped, book_quiet) ->
+      let count = wire 6 in
+      let pos = mux2 m.first (zero 6) count in
+      assign
+        count
+        (reg_fb spec ~width:6 ~f:(fun c ->
+           let p = mux2 m.first (zero 6) c in
+           mux2 m.valid (mux2 m.last (zero 6) (mux2 (p ==:. 63) p (p +:. 1))) c));
+      let at k = m.valid &: (pos ==:. k) in
+      let d = m.data in
+      let keep k x = reg spec ~enable:(at k) x in
+      let is_a = keep 0 (d ==:. Char.to_int 'A')
+      and is_f = keep 0 (d ==:. Char.to_int 'F') in
+      let loc_hi = keep 1 d in
+      let ours = keep 2 (mapped &: (concat_msb [ loc_hi; d ] ==: locate)) in
+      let sell = keep 19 (d ==:. Char.to_int 'S') in
+      let shares_seen = wire 1 in
+      let shares_nz_now = mux2 (at 20) (d <>:. 0) (shares_seen |: (d <>:. 0)) in
+      assign shares_seen (reg spec ~enable:(at 20 |: at 21 |: at 22 |: at 23) shares_nz_now);
+      let p32 = keep 32 d
+      and p33 = keep 33 d
+      and p34 = keep 34 d in
+      let price_live = concat_msb [ p32; p33; p34; d ] in
+      let price_kept = keep 35 price_live in
+      let price = mux2 (at 35) price_live price_kept in
+      let ready = book_quiet &: ~:(event.valid) &: ~:seen_low in
+      let candidate = (is_a |: is_f) &: ours &: sell in
+      let fire =
+        m.valid
+        &: m.last
+        &: ((is_a &: (pos ==:. 35)) |: (is_f &: (pos ==:. 39)))
+        &: candidate
+        &: shares_seen
+        &: (price <=:. rule.limit)
+        &: ready
+      in
+      let prestart = at 23 &: candidate &: shares_nz_now &: ready &: ~:tx_busy &: queue_empty in
+      (* cancel a pre-formed preamble when its message ends without an order
+         (or, failing that, after 64 cycles) *)
+      let pending = reg_fb spec ~width:1 ~f:(fun p -> mux2 prestart vdd (mux2 (m.valid &: m.last) gnd p)) in
+      let held = reg_fb spec ~width:7 ~f:(fun h -> mux2 tx_holding (mux2 (msb h) h (h +:. 1)) (zero 7)) in
+      let cancel = tx_holding &: ~:fire &: ((pending &: m.valid &: m.last) |: msb held) in
+      ( fire
       , concat_msb
-          [ c.price
-          ; sel_bottom c.seq ~width:seq_bits
-          ; now -:. Feed_handler.command_offset (* its message's last byte *)
-          ] )
+          [ price
+          ; sel_bottom m.seq ~width:seq_bits
+          ; now -:. Feed_handler.message_offset (* its message's last byte on the MAC stream *)
+          ]
+      , prestart
+      , cancel )
   in
   assign seen_low (reg_fb spec ~width:1 ~f:(fun l -> mux2 fast_fire vdd (mux2 ours low l)));
   (* ---- queue ---- *)
@@ -112,6 +161,7 @@ let create
       ~rd:start
   in
   assign full queue.full;
+  assign queue_empty queue.empty;
   let dropped = reg_fb spec ~width:32 ~f:(fun d -> mux2 ((fire |: fast_fire) &: full) (d +:. 1) d) in
   let fast_orders = reg_fb spec ~width:32 ~f:(fun n -> mux2 (fast_fire &: ~:full) (n +:. 1) n) in
   let q_price = select queue.q ~high:(Signal.width queue.q - 1) ~low:(seq_bits + 32) in
@@ -144,8 +194,10 @@ let create
   in
   assert (List.length enter_order = Itch_model.Ouch.enter_order_len);
   let frame = concat_lsb (const_bytes header @ enter_order) in
-  let tx = Gmii_tx.create ~spec ~start ~frame in
-  assign start (~:(queue.empty) &: ~:(tx.busy));
+  let tx = Gmii_tx.create ~prestart ~cancel ~spec ~start ~frame () in
+  assign tx_busy tx.busy;
+  assign tx_holding tx.holding;
+  assign start (~:(queue.empty) &: (~:(tx.busy) |: tx.holding));
   (* ---- tick-to-trade ---- *)
   let t_start = reg spec ~enable:start q_time in
   let t2t = now -: t_start +:. t2t_offset in
@@ -155,9 +207,9 @@ let create
       { Stats.orders
       ; fast = fast_orders
       ; dropped
-      ; t2t = Latency_monitor.histogram ~spec ~clock ~valid:tx.sof ~sample:t2t
+      ; t2t = Latency_monitor.histogram ~spec ~clock ~valid:tx.first ~sample:t2t
       }
-  ; t2t_valid = tx.sof
+  ; t2t_valid = tx.first
   ; t2t
   }
 ;;

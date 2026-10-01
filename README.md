@@ -26,11 +26,12 @@ trade-offs.
   one of the 1.74 million book commands in simulation; 41 cycles at p99.9.
   The board image measures the same quantity on chip for every command
   (below); that run on the board is still to be done.
-- **Tick-to-trade: 216 ns to 304 ns between the GMII pins** (27 to 38
-  cycles), from the last byte of the message that triggers an order to the
-  order frame's first byte, with every order frame byte-identical to the
-  model's (simulation of the whole board; the board image measures it on
-  chip too).
+- **Tick-to-trade: 112 ns between the GMII pins** (14 cycles), from the
+  last byte of the message that triggers an order to the order frame's
+  first byte, when the order is decided from the message itself (most
+  orders); up to 376 ns when the book has to be consulted. Every order frame
+  is byte-identical to the model's (simulation of the whole board; the
+  board image measures it on chip too).
 - **Timing closes at 125 MHz** in Vivado, for the core and for the gigabit
   board image, whose GMII inputs are constrained to the PHY datasheet's
   3 ns window.
@@ -79,9 +80,14 @@ flowchart LR
   table refills it while the book keeps processing commands.
 - **Order entry**: on the configured symbol, when the best offer falls to a
   limit (the board's: 100 SPY at $300.00), one immediate-or-cancel buy at
-  the offer, once per crossing. The Ethernet/IPv4/UDP header is a constant
-  (zero UDP checksum), so the frame goes straight from registers into the
-  transmit MAC, on the receive clock: no clock crossing on the way out.
+  the offer, once per crossing. A sell Add at or below the limit crosses by
+  itself, so it is decided straight from the message bytes as its price
+  arrives, without waiting for the book, and the order's preamble is
+  already on the wire by then (pre-formed from the moment the message is
+  known to be a candidate, dropped before any SFD if the price is too
+  high). The Ethernet/IPv4/UDP header is a constant (zero UDP checksum), so
+  the frame goes straight from registers into the transmit MAC, on the
+  receive clock: no clock crossing on the way out.
 - **Capacity failures** (a full table, an unsupported field value) are
   counted, never silent.
 
@@ -120,10 +126,10 @@ MoldUDP64 packets (`build/tracked.pcap`).
 | Book FIFO peak | 25 / 512 commands |
 | Background cache refills | 4,905; commands waited 10,756 cycles in total |
 | Core at 125 MHz, Vivado ([`timing.txt`](results/timing.txt)) | met, WNS +0.095 ns; 14,543 LUTs (23%), 8,983 FFs (7%), 98 BRAM tiles (73%) |
-| 1 Gb/s board image (with order entry), Vivado | met, WNS +0.068 ns; GMII inputs +0.44 / +0.45 ns, outputs +1.65 / +3.69 ns setup / hold |
+| 1 Gb/s board image (with order entry), Vivado | met, WNS +0.016 ns, WHS +0.001 ns; GMII inputs +0.44 / +0.45 ns, outputs +1.65 / +3.69 ns setup / hold |
 | 1 Gb/s board, whole dataset over a cable | 1,043,727 changes, count and hash equal to the reference |
 | 100 Mb/s board, cable and on-chip self-test | 39 changes, all equal to the model |
-| Orders, whole board in simulation ([`test_board.ml`](tests/hw/test_board.ml)) | 27 of 27 frames at the transmit pins equal to the model's; tick-to-trade 27 to 38 cycles |
+| Orders, whole board in simulation ([`test_board.ml`](tests/hw/test_board.ml)) | 27 of 27 frames at the transmit pins equal to the model's; tick-to-trade 13 cycles (21 orders decided from the message), up to 46 |
 
 Latency runs from the cycle the last byte of a message leaves the MAC to
 the cycle its event is valid. The tail comes from commands that find their

@@ -218,7 +218,11 @@ let create
       Order_entry.create
         ~rule
         ~t2t_offset:(8 + if Option.is_some captured then 1 else 0)
-        ~fast:(fh.command, fh.book_quiet)
+        ~fast:
+          ( fh.msg
+          , fh.slot_locates.(rule.slot)
+          , bit fh.slot_mapped ~pos:rule.slot
+          , fh.book_quiet )
         scope
         ~clock:rxc
         ~clear:clear_rx
@@ -294,7 +298,7 @@ let create
        | Some (oe : Order_entry.t) ->
          (* orders sent and dropped; tick-to-trade in 125 MHz cycles, from
             the triggering message's last byte on the GMII receive pins to
-            TX_EN rising on the GMII transmit pins *)
+            the order frame's first byte on the GMII transmit pins *)
          [ "osent", oe.stats.orders
          ; "ofast", oe.stats.fast
          ; "odrop", oe.stats.dropped

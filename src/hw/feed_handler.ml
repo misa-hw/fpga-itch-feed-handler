@@ -54,6 +54,9 @@ module O = struct
     ; cmd : 'a (* a book command enters the book's FIFO (Latency_monitor) *)
     ; command : 'a Symbol_filter.Command.t [@rtlmangle "_"] (* that command *)
     ; book_quiet : 'a (* the book is idle with nothing queued *)
+    ; msg : 'a Stream.Message.t [@rtlmangle "_"] (* the MoldUDP64 message stream *)
+    ; slot_locates : 'a array [@length Symbol_filter.num_slots] [@bits 16]
+    ; slot_mapped : 'a [@bits Symbol_filter.num_slots]
     }
   [@@deriving hardcaml]
 end
@@ -62,6 +65,10 @@ end
    fixed pipeline in front of the book. Latency_monitor adds it so its
    samples are the latency defined above (tests/hw/test_latency.ml). *)
 let command_offset = 5
+
+(* Cycles from a message's last byte on [rx] to the same byte on [msg]: the
+   frame and MoldUDP64 parsers' registers (tests/hw/test_order_entry.ml). *)
+let message_offset = 2
 
 let create ?p ?fifo_capacity scope (i : _ I.t) : _ O.t =
   let spec = Reg_spec.create ~clock:i.clock ~clear:i.clear () in
@@ -104,5 +111,8 @@ let create ?p ?fifo_capacity scope (i : _ I.t) : _ O.t =
   ; cmd = filter.cmd.valid
   ; command = filter.cmd
   ; book_quiet = book.quiet
+  ; msg = front.msg
+  ; slot_locates = filter.locates
+  ; slot_mapped = filter.mapped
   }
 ;;

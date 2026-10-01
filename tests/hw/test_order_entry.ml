@@ -2,8 +2,9 @@
    rate: the transmitted frames must be the model's (reference book, then
    Itch_model.Ouch.Strategy, then Net.Packet.frame) byte for byte with a
    correct FCS, and every tick-to-trade sample must be the number of cycles
-   from the triggering message's last byte on the receive MAC stream to
-   TX_EN rising. *)
+   from the triggering message's last byte on the receive MAC stream to the
+   order frame's first byte on TXD. Run waiting for the book, and with the
+   fast path (decided from the message stream, preamble pre-formed). *)
 
 open! Core
 open! Hardcaml
@@ -47,7 +48,11 @@ module Top = struct
     let oe =
       Order_entry.create
         ~rule
-        ?fast:(if fast then Some (fh.command, fh.book_quiet) else None)
+        ?fast:
+          (if fast
+           then
+             Some (fh.msg, fh.slot_locates.(rule.slot), Signal.bit fh.slot_mapped ~pos:rule.slot, fh.book_quiet)
+           else None)
         scope
         ~clock:i.clock
         ~clear:i.clear
@@ -69,15 +74,17 @@ let run ~fast =
   let last_byte = Hashtbl.create (module Int) in
   let wire = Buffer.create 256 in
   let frames = Queue.create () in
-  let rises = Queue.create () (* cycle of each TX_EN rise *) in
+  let firsts = Queue.create () (* cycle of each frame's first byte on TXD *) in
   let samples = Queue.create () in
-  let prev_en = ref false in
+  let prev_en = ref false and after_sfd = ref false in
   let step () =
     Cyclesim.cycle sim;
     incr cycle;
     let en = Bits.to_bool !(o.txen) in
-    if en && not !prev_en then Queue.enqueue rises !cycle;
-    if en then Buffer.add_char wire (Char.of_int_exn (Bits.to_int_trunc !(o.txd)));
+    let byte = Bits.to_int_trunc !(o.txd) in
+    if en && !after_sfd then Queue.enqueue firsts !cycle;
+    after_sfd := en && byte = 0xd5 && String.for_all (Buffer.contents wire) ~f:(Char.equal '\x55');
+    if en then Buffer.add_char wire (Char.of_int_exn byte);
     if (not en) && !prev_en
     then (
       Queue.enqueue frames (Buffer.contents wire);
@@ -145,7 +152,8 @@ let run ~fast =
     packets messages trial
   done;
   idle 20_000;
-  (* frames: preamble and SFD, the model's frame, its FCS *)
+  (* frames: at least 7 preamble bytes and the SFD (more if the preamble
+     was pre-formed), then the model's frame and its FCS *)
   let want =
     Queue.to_list expected
     |> List.map ~f:(fun (_, order) ->
@@ -153,19 +161,31 @@ let run ~fast =
         Packet.frame ~udp_checksum:false Packet.order_endpoints (Ouch.enter_order_to_string order)
       in
       let fcs = Crc32_sw.fcs f in
-      String.make 7 '\x55'
-      ^ "\xd5"
-      ^ f
-      ^ String.init 4 ~f:(fun k -> Char.of_int_exn ((fcs lsr (8 * k)) land 0xff)))
+      f ^ String.init 4 ~f:(fun k -> Char.of_int_exn ((fcs lsr (8 * k)) land 0xff)))
   in
-  let got = Queue.to_list frames in
+  (* a burst of preamble with no SFD is a cancelled pre-formed preamble *)
+  let bursts, frames_ = List.partition_tf (Queue.to_list frames) ~f:(fun w -> String.for_all w ~f:(Char.equal '\x55')) in
+  let got, preambles =
+    frames_
+    |> List.map ~f:(fun w ->
+      let pre = String.take_while w ~f:(Char.equal '\x55') in
+      let rest = String.drop_prefix w (String.length pre) in
+      if String.length pre >= 7 && String.is_prefix rest ~prefix:"\xd5"
+      then String.drop_prefix rest 1, String.length pre
+      else "bad preamble", String.length pre)
+    |> List.unzip
+  in
   printf "orders: model %d, hardware %d (fast path %d, dropped %d)\n" (List.length want) (List.length got)
     (Bits.to_int_trunc !(o.stats.fast)) (Bits.to_int_trunc !(o.stats.dropped));
   printf "frames equal the model's: %b\n" ([%equal: string list] got want);
-  (* tick-to-trade: TX_EN rise minus the trigger's last byte *)
+  printf "cancelled pre-formed preambles: %d\n" (List.length bursts);
+  printf "preamble bytes: %s\n"
+    (List.dedup_and_sort preambles ~compare:Int.compare |> List.map ~f:Int.to_string |> String.concat ~sep:",");
+  (* tick-to-trade: the order frame's first byte on TXD minus the trigger's
+     last byte on the receive MAC stream *)
   let t2t_want =
-    List.map2_exn (Queue.to_list expected) (Queue.to_list rises) ~f:(fun (seq, _) rise ->
-      rise - Hashtbl.find_exn last_byte seq)
+    List.map2_exn (Queue.to_list expected) (Queue.to_list firsts) ~f:(fun (seq, _) first ->
+      first - Hashtbl.find_exn last_byte seq)
   in
   printf "tick-to-trade samples equal the definition: %b\n"
     ([%equal: int list] (Queue.to_list samples) t2t_want);
@@ -187,14 +207,18 @@ let%expect_test "orders equal the model's, byte for byte; tick-to-trade per orde
     waiting for the book:
     orders: model 41, hardware 41 (fast path 0, dropped 0)
     frames equal the model's: true
+    cancelled pre-formed preambles: 0
+    preamble bytes: 7
     tick-to-trade samples equal the definition: true
-    tick-to-trade, cycles: min 19 median 19 max 30
-    hardware histogram: count 41 p50 19 max 30
+    tick-to-trade, cycles: min 27 median 27 max 38
+    hardware histogram: count 41 p50 27 max 38
     with the fast path:
     orders: model 41, hardware 41 (fast path 32, dropped 0)
     frames equal the model's: true
+    cancelled pre-formed preambles: 24
+    preamble bytes: 7,13
     tick-to-trade samples equal the definition: true
-    tick-to-trade, cycles: min 7 median 7 max 30
-    hardware histogram: count 41 p50 7 max 30
+    tick-to-trade, cycles: min 5 median 5 max 38
+    hardware histogram: count 41 p50 5 max 38
     |}]
 ;;

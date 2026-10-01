@@ -149,7 +149,8 @@ if "osent" in b:
                 got.append(f.read(caplen).hex())
     want_orders = [l for l in open(sys.argv[6]).read().split() if not l.startswith("orders=")]
     print(f"orders: board sent {b['osent']} (dropped {b['odrop']}), host captured {len(got)}, "
-          f"model {len(want_orders)}; tick-to-trade between the GMII pins, 125 MHz cycles, "
+          f"model {len(want_orders)}; {b.get('ofast')} on the fast path; tick-to-trade between the GMII pins "
+          f"(trigger's last byte in, order's first byte out), 125 MHz cycles, "
           f"{b['tt']} orders: p50 {b['t50']}, p99 {b['t99']}, max {b['tmax']} "
           f"(ns: {8 * b['t50']}, {8 * b['t99']}, {8 * b['tmax']})")
     if got != want_orders:

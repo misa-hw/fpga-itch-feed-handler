@@ -256,7 +256,8 @@ Bugs found by this process before hardware (the board found three more; see
 ExtraTimingOpt placement and AggressiveExplore physical optimisation and
 routing), using 23% of the LUTs and 73% of the block RAM. The 1 Gb/s board
 image, which adds the MACs, the GMII capture, the latency monitor, the
-order entry, the UART and the counters, meets it too (WNS +0.068 ns). The refill tournament
+order entry, the UART and the counters, meets it too (WNS +0.016 ns, WHS
++0.001 ns: thin, but met at the worst-case corners). The refill tournament
 computes each node's runner-up (the largest of two runners-up and the
 loser) with all comparisons in parallel; as two chained compare-and-selects
 it was the board image's critical path. The background refill needed two register
@@ -471,20 +472,44 @@ book's events and sends an OUCH 5.0 Enter Order back out of the PHY.
   samples TXD half a cycle after the IOB output registers launch it; the
   output constraints use the datasheet's 2 ns setup and 0 ns hold.
 
+**Deciding earlier.** Waiting for the book costs 17 to 28 cycles, but for
+this rule most crossings do not need it: a sell Add at or below the limit
+makes the best ask cross by itself (the new ask is its price). So when the
+book is up to date (idle, nothing queued, no event in flight) and the rule
+is armed, a small detector on the MoldUDP64 message stream decides on the
+message's last byte, comparing the price as that byte arrives. The order
+is the one the book path would send; every other crossing (the best ask
+deleted or executed, a busy book) still comes from the book's event, and
+the event of an order already sent does not fire again.
+
+**Pre-forming the preamble.** By byte 23 of an Add (shares complete) the
+detector knows whether the message is a candidate: an Add, on the rule's
+symbol, a sell, with shares. Then the transmit MAC starts sending preamble
+and holds it until the decision, 12 bytes later; if the order fires, the
+SFD and the frame follow at once instead of 8 bytes of preamble, and if the
+price is above the limit, transmit is released before any SFD, which no
+receiver takes for a frame (`tests/hw/test_gmii_tx.ml` checks that the
+receive MAC sees nothing and counts no error). The cost is a burst of
+preamble on the order link for every candidate that does not fire.
+
 **Tick-to-trade** is measured on every order, from the cycle the last byte
-of the triggering message is on the GMII receive pins to the cycle TX_EN
-rises on the transmit pins, into the same hardware histogram as the book
-latency. In simulation of the whole board (`tests/hw/test_board.ml`), 27
-cycles (216 ns) at best and 38 at most, and the board's own figure equals
-the one measured at the pins. Of the 27:
+of the triggering message is on the GMII receive pins to the cycle the
+order frame's first byte is on the transmit pins, into the same hardware
+histogram as the book latency. In simulation of the whole board
+(`tests/hw/test_board.ml`), the board's own figure equals the one measured
+at the pins: 13 cycles (104 ns) for the 21 of 27 orders decided from the
+message, up to 46 for those that need the book. Of the 13:
 
 | stage | cycles |
 |---|---|
 | receive pins to the MAC's output stream: input register, and the MAC holding back 4 bytes until it knows they are not the FCS | 7 |
-| message's last byte on that stream to the book's event (the book latency of an Add, its shortest) | 17 |
-| event to TX_EN at the transmit MAC: trigger, queue, start | 2 |
-| TX_EN through the IOB output register to the pin | 1 |
+| MAC stream to the MoldUDP64 message stream | 2 |
+| last byte to the order frame's first byte at the transmit MAC: decide (price compared as its last byte arrives), queue, SFD on the held preamble, first byte | 3 |
+| through the IOB output register to the pin | 1 |
 
-The gigabit image's input capture adds one more cycle (its BUFIO input
-register feeds a falling-edge and then a rising-edge register). The PHY's
-own receive and transmit latency comes on top and is not measured here.
+Orders that need the book took 35 to 46 cycles at the pins in the same
+run: the book's 17 or more cycles, and a full 8-byte preamble once the
+event arrives. The gigabit image's input capture adds one more cycle (its BUFIO
+input register feeds a falling-edge and then a rising-edge register): 14
+cycles, 112 ns. The PHY's own receive and transmit latency comes on top and
+is not measured here.

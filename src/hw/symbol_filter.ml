@@ -46,6 +46,7 @@ module O = struct
   type 'a t =
     { cmd : 'a Command.t [@rtlmangle "_"]
     ; mapped : 'a [@bits num_slots] (* which slots have seen their directory message *)
+    ; locates : 'a array [@length num_slots] [@bits 16] (* each slot's stock locate *)
     }
   [@@deriving hardcaml]
 end
@@ -64,8 +65,10 @@ let create _scope (i : _ I.t) : _ O.t =
       in
       let locate = reg spec ~enable:named d.locate in
       let mapped = reg_fb spec ~width:1 ~f:(fun v -> v |: named) in
-      mapped, mapped &: (locate ==: d.locate))
+      (mapped, locate), mapped &: (locate ==: d.locate))
   in
+  let locates = Array.map slots ~f:(fun ((_, l), _) -> l) in
+  let slots = Array.map slots ~f:(fun ((m, _), hit) -> m, hit) in
   let mapped = concat_lsb (Array.to_list (Array.map slots ~f:fst)) in
   let slots = Array.map slots ~f:snd in
   let hit = Array.to_list slots |> List.reduce_exn ~f:( |: ) in
@@ -84,7 +87,7 @@ let create _scope (i : _ I.t) : _ O.t =
     }
     |> Command.map ~f:(reg spec)
   in
-  { O.cmd; mapped }
+  { O.cmd; mapped; locates }
 ;;
 
 let hierarchical scope =
