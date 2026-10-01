@@ -1,5 +1,7 @@
 # FPGA ITCH feed handler
 
+[![tests](https://github.com/DuClare/fpga-itch-feed-handler/actions/workflows/test.yml/badge.svg)](https://github.com/DuClare/fpga-itch-feed-handler/actions/workflows/test.yml)
+
 A Nasdaq market-data feed handler in [Hardcaml](https://github.com/janestreet/hardcaml),
 running on a QMTech Wukong board (Xilinx Artix-7 XC7A100T, RTL8211EG
 gigabit PHY). It takes Ethernet frames straight from the PHY, parses
