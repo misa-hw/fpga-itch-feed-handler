@@ -67,3 +67,20 @@ end with the reference book's changes and orders over the whole session.
   turned away by the buffer (peak 1,175 parked). Next: where answers are
   delayed or lost on the host (the capture now records them at the
   transmit tap, with the delay from each request).
+
+6. Top speed again, 140,060 frames/s, same image: PASS
+  S1 frm=0033337a acc=00333326 flt=00000054 err=00000000 fcs=00000000 msg=001abf72 gap=00018c53 dup=00366509 rpl=00069e7d rqs=00013a04 mlost=00000000 bovf=00000411 bpk=0475 stl=0 cmd=001a8f98 chg=000fed0f hash=186f6e17 lost=000fd927 kick=0003b6f1 rfl=00001380 ovf=00000000 ord=00006a14 lvl=00001d0a map=ff blen=00000000 dord=001a8f98 fcmd=001a8f98 fmax=00000008 uns=00000000 bst=01 bfe=1 clk=1caa7b95 lat=001a8f98 l50=0014 l99=001f l999=0029 lmax=00000cf5 osent=00000035 ofast=00000035 odrop=00000000 tt=00000035 t50=000e t99=000e tmax=0000000e
+  all 1,752,946 messages, hash 186f6e17, 53 of 53 orders, none given up;
+  80,388 requests, 1,041 messages turned away by the full buffer (all
+  recovered later), peak 1,141 parked
+  answers: 111,365 frames sent by the server, 111,365 seen leaving the host
+  at the transmit tap, 110,339 accepted by the board (1,026 lost after the
+  host's tap: in the NIC or on the way)
+  request to answer leaving the host: p50 0.047 ms, p99 1.499, p99.9 5.114,
+  max 13.458; 24 over 8 ms
+  Runs 3, 5 and 6 on the same image and feed: 96, 1,718 and 0 given up. The
+  difference is whether a hole timed out: the server stalls for up to
+  13.5 ms under this load, longer than the board's 8 requests over 8 ms;
+  one timeout also switches on the "server silent" give-up, which then
+  turned full-buffer events into give-ups in run 5. Next image: 32
+  requests over 32 ms.

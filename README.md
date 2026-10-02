@@ -131,7 +131,7 @@ MoldUDP64 packets (`build/tracked.pcap`).
 | Book FIFO peak | 25 / 512 commands |
 | Background cache refills | 4,903; commands waited 10,902 cycles in total |
 | Core at 125 MHz, Vivado ([`timing.txt`](results/timing.txt)) | met, WNS +0.095 ns; 14,543 LUTs (23%), 8,983 FFs (7%), 98 BRAM tiles (73%) |
-| 1 Gb/s board image (order entry, gap recovery), Vivado | met, WNS +0.070 ns, WHS +0.026 ns; 21,041 LUTs (33%), 117.5 BRAM tiles (87%); GMII inputs +0.44 / +0.45 ns, outputs +1.65 / +3.69 ns setup / hold |
+| 1 Gb/s board image (order entry, gap recovery), Vivado | met, WNS +0.044 ns, WHS +0.025 ns; 20,941 LUTs (33%), 117.5 BRAM tiles (87%); GMII inputs +0.44 / +0.45 ns, outputs +1.65 / +3.69 ns setup / hold |
 | 1 Gb/s board, whole dataset over a cable | 1,043,727 changes, count and hash equal to the reference |
 | Orders on the board, whole dataset | 53 of 53 equal to the model's; tick-to-trade 112 ns pin to pin for every order |
 | Gap recovery on the board ([`board_recovery.txt`](results/board_recovery.txt)) | two lines each losing 2% of packets (643 lost on both), 60,000 frames/s: all 1,752,946 messages recovered in sequence, changes and hash equal to the reference, 53 of 53 orders |

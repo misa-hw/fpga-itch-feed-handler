@@ -91,3 +91,9 @@ Gap recovery, 32 KB / 2,048-message buffer and the full-buffer give-up
   GMII inputs +0.444 / +0.450 ns, outputs +1.654 / +3.688 ns (setup / hold)
   Utilization: 21,041 LUTs (33.2%), 16,443 registers (13.0%),
                117.5 BRAM tiles (87.0%); recovery adds 1,333 LUTs, 12.5 tiles
+
+Gap recovery with a 32-request (32 ms) budget before giving up (2026-10-03):
+  WNS +0.044 ns, WHS +0.025 ns, 0 failing endpoints: MET
+  endpoints within 0.1 / 0.2 / 0.5 / 1.0 ns of setup: 16 / 49 / 352 / 2,189
+  GMII inputs +0.444 / +0.450 ns, outputs +1.654 / +3.688 ns (setup / hold)
+  Utilization: 20,941 LUTs (33.0%), 117.5 BRAM tiles (87.0%)

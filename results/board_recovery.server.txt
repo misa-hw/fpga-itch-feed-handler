@@ -1,0 +1,40 @@
+Started itch-mold.service - [systemd-run] /usr/bin/python3 /home/misa/projects/fpga-itch-feed-handler/scripts/mold_server.py serve eno1 /home/misa/projects/fpga-itch-feed-handler/build/tracked.pcap.
+serving 1752946 messages of session b'ITCH50SMPL' on eno1
+so far: 0 requests, 0 messages served in 0 frames, 0 frames dropped by the kernel
+so far: 0 requests, 0 messages served in 0 frames, 0 frames dropped by the kernel
+so far: 0 requests, 0 messages served in 0 frames, 0 frames dropped by the kernel
+so far: 0 requests, 0 messages served in 0 frames, 0 frames dropped by the kernel
+so far: 3465 requests, 77115 messages served in 4780 frames, 0 frames dropped by the kernel
+so far: 7067 requests, 161114 messages served in 9696 frames, 0 frames dropped by the kernel
+so far: 10526 requests, 230810 messages served in 14237 frames, 0 frames dropped by the kernel
+so far: 14169 requests, 315019 messages served in 19200 frames, 0 frames dropped by the kernel
+so far: 17444 requests, 403028 messages served in 23958 frames, 0 frames dropped by the kernel
+so far: 20817 requests, 472045 messages served in 28460 frames, 0 frames dropped by the kernel
+so far: 24286 requests, 546426 messages served in 33130 frames, 0 frames dropped by the kernel
+so far: 27888 requests, 672984 messages served in 39160 frames, 0 frames dropped by the kernel
+so far: 31423 requests, 760880 messages served in 44122 frames, 0 frames dropped by the kernel
+so far: 34854 requests, 830224 messages served in 48677 frames, 0 frames dropped by the kernel
+so far: 38255 requests, 906803 messages served in 53361 frames, 0 frames dropped by the kernel
+so far: 41729 requests, 983126 messages served in 58077 frames, 0 frames dropped by the kernel
+so far: 45124 requests, 1067391 messages served in 62848 frames, 0 frames dropped by the kernel
+so far: 48591 requests, 1143639 messages served in 67487 frames, 0 frames dropped by the kernel
+so far: 51971 requests, 1226633 messages served in 72234 frames, 0 frames dropped by the kernel
+so far: 55451 requests, 1308176 messages served in 76993 frames, 0 frames dropped by the kernel
+so far: 58969 requests, 1393187 messages served in 81904 frames, 0 frames dropped by the kernel
+so far: 62363 requests, 1475644 messages served in 86686 frames, 0 frames dropped by the kernel
+so far: 65697 requests, 1554725 messages served in 91328 frames, 0 frames dropped by the kernel
+so far: 69277 requests, 1632735 messages served in 96132 frames, 0 frames dropped by the kernel
+so far: 72883 requests, 1715106 messages served in 101089 frames, 0 frames dropped by the kernel
+so far: 76290 requests, 1790034 messages served in 105704 frames, 0 frames dropped by the kernel
+so far: 79742 requests, 1865812 messages served in 110400 frames, 0 frames dropped by the kernel
+so far: 80387 requests, 1883868 messages served in 111364 frames, 0 frames dropped by the kernel
+so far: 80387 requests, 1883868 messages served in 111364 frames, 0 frames dropped by the kernel
+so far: 80387 requests, 1883868 messages served in 111364 frames, 0 frames dropped by the kernel
+so far: 80388 requests, 1883886 messages served in 111365 frames, 0 frames dropped by the kernel
+so far: 80388 requests, 1883886 messages served in 111365 frames, 0 frames dropped by the kernel
+so far: 80388 requests, 1883886 messages served in 111365 frames, 0 frames dropped by the kernel
+total: 80388 requests, 1883886 messages served in 111365 frames, 0 frames dropped by the kernel
+Stopping itch-mold.service - [systemd-run] /usr/bin/python3 /home/misa/projects/fpga-itch-feed-handler/scripts/mold_server.py serve eno1 /home/misa/projects/fpga-itch-feed-handler/build/tracked.pcap...
+itch-mold.service: Deactivated successfully.
+Stopped itch-mold.service - [systemd-run] /usr/bin/python3 /home/misa/projects/fpga-itch-feed-handler/scripts/mold_server.py serve eno1 /home/misa/projects/fpga-itch-feed-handler/build/tracked.pcap.
+itch-mold.service: Consumed 6.105s CPU time over 36.268s wall clock time, 265.8M memory peak.

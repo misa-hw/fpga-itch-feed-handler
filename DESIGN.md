@@ -259,7 +259,7 @@ image, which adds the MACs, the GMII capture, the latency monitor, the
 order entry, the UART and the counters, meets it too: WNS +0.075 ns, WHS
 +0.016 ns, two endpoints within 0.1 ns, and the worst paths four logic
 levels into BRAM pins, mostly routing. With gap recovery (section 12):
-WNS +0.070 ns, WHS +0.026 ns.
+WNS +0.044 ns, WHS +0.025 ns.
 
 That image had first closed at WNS +0.016 ns, WHS +0.001 ns, and the margin
 turned out to depend on how synthesis retiming happened to partition the
@@ -583,7 +583,8 @@ the RAM one byte per cycle like a live packet.
 **Asking for the missing.** While E is missing, a timer runs. After 16 µs
 (the window for the B line to catch up) the board asks for E up to the
 buffer's head (or L), at most 1,024 messages; again every 1 ms without
-progress, up to 8 times. The request is a MoldUDP64 header (session,
+progress, up to 32 times (32 ms: the host's server, under the replay's load,
+was measured stalling for up to 13.5 ms). The request is a MoldUDP64 header (session,
 sequence number, count) in a UDP frame from the transmit MAC, which it
 shares with the orders: a request waits while an order is queued or a
 preamble is pre-formed. An order can still wait for a request already on
@@ -602,8 +603,8 @@ very end of a burst is seen too.
 **What it costs.** No latency: a message that arrives in sequence goes
 through with the same 2 cycles as before, and the fast path is unchanged
 (it acts on messages in sequence). In the board image: 1,333 LUTs and 12.5
-BRAM tiles (21,041 LUTs, 33%, and 117.5 of 135 tiles in all), and it still
-meets 125 MHz (WNS +0.070 ns, WHS +0.026 ns). Closing it took two
+BRAM tiles (20,941 LUTs, 33%, and 117.5 of 135 tiles in all), and it still
+meets 125 MHz (WNS +0.044 ns, WHS +0.025 ns). Closing it took two
 registers: the decision on a message's first byte compares its number with
 L a cycle ahead (both are settled at least two bytes earlier, during the
 block length), and the "most parked at once" statistic follows the

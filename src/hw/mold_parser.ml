@@ -105,11 +105,14 @@ module Recovery = struct
 
   (* 16 us to wait for the B line, 1 ms per retry: at 125 MHz. 32 KB of
      bodies: with 16 KB, the buffer ran out of bytes (peak 586 messages) on
-     the board at the host's top speed, 126,000 frames/s on two lines. *)
+     the board at the host's top speed, 126,000 frames/s on two lines.
+     32 requests (32 ms) before giving up: with 8, the host's server
+     stalling for up to 13.5 ms under that load made holes time out while
+     it was still answering. *)
   let default =
     { window = 2_000
     ; retry = 125_000
-    ; max_retries = 8
+    ; max_retries = 32
     ; max_request = 1024
     ; buffer_bytes = 32_768
     ; buffer_messages = 2048
