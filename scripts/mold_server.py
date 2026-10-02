@@ -19,6 +19,7 @@ raw sockets).
 Addresses are those of src/net/packet.ml (order_endpoints, request_endpoints,
 retransmission_endpoints, default_endpoints).
 """
+import ctypes
 import socket
 import struct
 import sys
@@ -91,10 +92,35 @@ def raw_socket(iface):
     return s
 
 
+# classic BPF: accept only frames from the board (02:00:00:00:00:10)
+BOARD_FILTER = [
+    (0x20, 0, 0, 6),           # ld  [6]   source MAC, bytes 0-3
+    (0x15, 0, 3, 0x02000000),  # jeq       else reject
+    (0x28, 0, 0, 10),          # ldh [10]  source MAC, bytes 4-5
+    (0x15, 0, 1, 0x0010),      # jeq       else reject
+    (0x06, 0, 0, 0xFFFF),      # ret accept
+    (0x06, 0, 0, 0),           # ret reject
+]
+
+
+def board_socket(iface):
+    """A raw socket that sees only the board's frames: the kernel drops the
+    1 Gb/s feed before it reaches this process, so a request cannot be lost
+    in a full socket buffer."""
+    s = raw_socket(iface)
+    prog = b"".join(struct.pack("HBBI", *i) for i in BOARD_FILTER)
+    buf = ctypes.create_string_buffer(prog)
+    fprog = struct.pack("HL", len(BOARD_FILTER), ctypes.addressof(buf))
+    s.setsockopt(socket.SOL_SOCKET, 26, fprog)  # SO_ATTACH_FILTER
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 << 22)
+    s._filter_buf = buf  # keep it alive with the socket
+    return s
+
+
 def serve(iface, pcap):
     session, messages = read_pcap(pcap)
     print(f"serving {len(messages)} messages of session {session!r} on {iface}", flush=True)
-    s = raw_socket(iface)
+    s = board_socket(iface)
     # promiscuous: requests go to 02:00:00:00:00:02, not this NIC's address
     ifindex = socket.if_nametoindex(iface)
     s.setsockopt(263, 1, struct.pack("IHH8s", ifindex, 1, 0, b""))  # SOL_PACKET, PACKET_ADD_MEMBERSHIP, PROMISC

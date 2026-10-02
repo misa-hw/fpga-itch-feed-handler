@@ -10,7 +10,8 @@
 #
 # DROP_A, DROP_B: loss on each line (default 0.02); AB=0 sends the recorded
 # feed as it is (one line, only the host's own losses); LIMIT=N uses the
-# first N packets; PPS=R paces the replay (default: top speed); PROGRAM=0
+# first N packets; PPS=R paces the replay (default 60000; PPS=top for top
+# speed, where the host's own drops and reorders add to the losses); PROGRAM=0
 # uses the board as it is (it must not have received anything since it was
 # programmed: a session starts at message 1).
 set -euo pipefail
@@ -82,8 +83,11 @@ for _ in $(seq 1 120); do
   sleep 1
 done
 sudo journalctl --since "$since" -u itch-mold -o cat | grep '^serving' || { echo "the retransmission server did not start" >&2; exit 1; }
-rate=(--topspeed)
-[[ -n ${PPS:-} ]] && rate=(--pps="$PPS")
+# 60,000 frames/s by default (both lines: about 2 minutes for the whole
+# session); PPS=top for as fast as the host sends
+pps="${PPS:-60000}"
+rate=(--pps="$pps")
+[[ $pps == top ]] && rate=(--topspeed)
 sudo tcpreplay --intf1="$iface" "${rate[@]}" --preload-pcap "$feed" 2>&1 | tee "$out.tcpreplay.txt"
 # an exchange's heartbeats: losses at the very end show up too
 sleep 0.5
