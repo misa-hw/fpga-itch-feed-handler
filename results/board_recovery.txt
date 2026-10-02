@@ -53,3 +53,17 @@ end with the reference book's changes and orders over the whole session.
          111,187 frames the board accepted beyond the feed.
   orders: 53 of 53 equal to the model's; tick-to-trade p50 14 cycles, max
          21 (an order waited for a re-request already being sent)
+
+4. 60,000 frames/s again, same image as run 3: PASS
+  S1 frm=0031d7e9 acc=0031d74f flt=0000009a err=00000000 fcs=00000000 msg=001abf72 gap=00007f26 dup=001a07b4 rpl=0001b6d2 rqs=0000532b mlost=00000000 bovf=00000000 bpk=005c stl=0 cmd=001a8f98 chg=000fed0f hash=186f6e17 lost=000fbed5 kick=0003b6f1 rfl=000013e4 ovf=00000000 ord=00006a14 lvl=00001d0a map=ff blen=00000000 dord=001a8f98 fcmd=001a8f98 fmax=00000002 uns=00000000 bst=01 bfe=1 clk=03c61b47 lat=001a8f98 l50=0014 l99=001f l999=0028 lmax=0000053b osent=00000035 ofast=00000035 odrop=00000000 tt=00000035 t50=000e t99=000e tmax=0000000e
+  all 1,752,946 messages, hash 186f6e17, 53 of 53 orders, none given up;
+  21,291 requests answered with 22,868 messages in 21,296 frames
+
+5. Top speed again, 136,731 frames/s: FAIL, 1,718 given up (96 in run 3)
+  S1 frm=0033361d acc=003335ca flt=00000053 err=00000000 fcs=00000000 msg=001ab8bc gap=000191d6 dup=0035938a rpl=0006aa1a rqs=00013d7f mlost=000006b6 bovf=0000009b bpk=0497 stl=1 cmd=001a88e3 chg=0008bbc2 hash=5890f6cb lost=0008a763 kick=00022c11 rfl=0000112d ovf=00000000 ord=00006657 lvl=00001c4e map=ff blen=00000000 dord=001a88e3 fcmd=001a88e3 fmax=0000002a uns=00000000 bst=01 bfe=1 clk=1be87c4c lat=001a88e3 l50=0014 l99=001c l999=0023 lmax=000007f6 osent=00000030 ofast=00000030 odrop=00000000 tt=00000030 t50=000e t99=000e tmax=0000000e
+  81,279 requests, all captured and answered: 1,826,831 messages in
+  111,251 frames; the board accepted 111,015 frames beyond the feed: 236
+  answer frames lost between the server and the board. 155 messages
+  turned away by the buffer (peak 1,175 parked). Next: where answers are
+  delayed or lost on the host (the capture now records them at the
+  transmit tap, with the delay from each request).

@@ -76,7 +76,7 @@ sudo systemd-run --quiet --collect --unit=itch-mold \
   python3 "$PWD/scripts/mold_server.py" serve "$iface" "$PWD/$reference"
 rm -f "$out.orders.pcap"
 sudo systemd-run --quiet --collect --unit=itch-orders \
-  tcpdump -i "$iface" -B 65536 -Z "$USER" -w "$PWD/$out.orders.pcap" 'ether src 02:00:00:00:00:10'
+  tcpdump -i "$iface" -B 65536 -Z "$USER" -w "$PWD/$out.orders.pcap" 'ether src 02:00:00:00:00:10 or ether src 02:00:00:00:00:02'
 # the server reads the whole session first
 for _ in $(seq 1 120); do
   sudo journalctl --since "$since" -u itch-mold -o cat 2> /dev/null | grep -q '^serving' && break
@@ -166,29 +166,58 @@ if not line.startswith("S1"):
 for key in ("fcs", "err", "ovf"):
     if b.get(key, -1):
         bad.append(f"{key}={b.get(key)}")
-# the board's frames: orders (UDP port 26400) and re-requests (26402)
-got, requests_seen = [], 0
+# the board's frames: orders (UDP port 26400) and re-requests (26402); and
+# the server's answers as they leave the host (captured at the transmit
+# tap, after the queueing discipline), with their times
+got, requests, answer_frames = [], [], []
 if os.path.exists(sys.argv[3]):
     with open(sys.argv[3], "rb") as f:
         f.read(24)
         while len(rec := f.read(16)) == 16:
-            frame = f.read(struct.unpack_from("<I", rec, 8)[0])
+            sec, usec, caplen = struct.unpack_from("<III", rec, 0)
+            frame = f.read(caplen)
+            t = sec + usec / 1e6
             port = struct.unpack_from(">H", frame, 36)[0]
-            if port == 26400:
+            seq = struct.unpack_from(">Q", frame, 42 + 10)[0] if len(frame) >= 60 else 0
+            if frame[6:12] == bytes.fromhex("020000000002"):
+                answer_frames.append((t, seq))
+            elif port == 26400:
                 got.append(frame.hex())
             elif port == 26402:
-                requests_seen += 1
+                requests.append((t, seq))
+requests_seen = len(requests)
 server = [l for l in open(sys.argv[8]).read().splitlines() if l.startswith(("total:", "so far:"))]
 print(f"re-requests: board sent {b['rqs']}, host captured {requests_seen}; server "
       + (server[-1] if server else "printed no summary"))
 # answers: frames the board received beyond the feed (and 3 heartbeats)
-sent = re.search(r"Actual: (\d+) packets", open(sys.argv[9]).read())
+# the last "Actual:" line is the total (the others are progress)
+sent = (re.findall(r"Actual: (\d+) packets", open(sys.argv[9]).read()) or [None])[-1]
 answers = re.search(r"in (\d+) frames", server[-1]) if server else None
 if sent and answers:
-    got_extra = b["acc"] - int(sent.group(1)) - 3  # accepted frames, beyond the feed
-    print(f"answers: server sent {answers.group(1)} frames, the board received {got_extra}"
-          + ("" if got_extra >= int(answers.group(1)) else
-             f" ({int(answers.group(1)) - got_extra} lost between the server and the board)"))
+    got_extra = b["acc"] - int(sent) - 3  # accepted frames, beyond the feed
+    print(f"answers: server sent {answers.group(1)} frames, {len(answer_frames)} left the host "
+          f"(transmit tap), the board received {got_extra}")
+# how long a request waited for its answer to leave the host: from the
+# request's capture to the first answer frame starting at its sequence number
+if requests and answer_frames:
+    import bisect
+    by_seq = {}
+    for t, seq in answer_frames:
+        by_seq.setdefault(seq, []).append(t)
+    delays, unanswered = [], 0
+    for t, seq in requests:
+        ts = by_seq.get(seq, [])
+        k = bisect.bisect_left(ts, t)
+        if k < len(ts):
+            delays.append(ts[k] - t)
+        else:
+            unanswered += 1
+    delays.sort()
+    if delays:
+        q = lambda p: delays[min(len(delays) - 1, int(p * len(delays)))] * 1e3
+        print(f"request to answer leaving the host, ms: p50 {q(0.5):.3f}, p99 {q(0.99):.3f}, "
+              f"p99.9 {q(0.999):.3f}, max {delays[-1] * 1e3:.3f}; over 8 ms: "
+              f"{sum(d > 0.008 for d in delays)}; no answer seen: {unanswered}")
 want_orders = [l for l in open(sys.argv[4]).read().split() if not l.startswith("orders=")]
 print(f"orders: board sent {b['osent']} (dropped {b['odrop']}), host captured {len(got)}, model {len(want_orders)}; "
       f"tick-to-trade p50 {b['t50']}, max {b['tmax']} cycles")
