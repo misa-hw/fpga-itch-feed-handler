@@ -113,8 +113,7 @@ def board_socket(iface):
     fprog = struct.pack("HL", len(BOARD_FILTER), ctypes.addressof(buf))
     s.setsockopt(socket.SOL_SOCKET, 26, fprog)  # SO_ATTACH_FILTER
     s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 << 22)
-    s._filter_buf = buf  # keep it alive with the socket
-    return s
+    return s  # the kernel keeps its own copy of the filter
 
 
 def serve(iface, pcap):

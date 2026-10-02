@@ -83,6 +83,14 @@ for _ in $(seq 1 120); do
   sleep 1
 done
 sudo journalctl --since "$since" -u itch-mold -o cat | grep '^serving' || { echo "the retransmission server did not start" >&2; exit 1; }
+# it must still be running once it has read the session (a crash would
+# leave every request unanswered)
+sleep 1
+if ! sudo systemctl is-active --quiet itch-mold; then
+  echo "the retransmission server stopped:" >&2
+  sudo journalctl --since "$since" -u itch-mold -o cat | tail -15 >&2
+  exit 1
+fi
 # 60,000 frames/s by default (both lines: about 2 minutes for the whole
 # session); PPS=top for as fast as the host sends
 pps="${PPS:-60000}"
@@ -95,10 +103,15 @@ sudo python3 scripts/mold_server.py heartbeat "$iface" "$reference" 3
 # time for the last requests, and two more status lines
 sleep 3
 kill $reader
-sudo systemctl stop itch-orders itch-mold
+server_ok=1
+sudo systemctl is-active --quiet itch-mold || server_ok=0
+sudo systemctl stop itch-orders itch-mold 2> /dev/null || true
 sleep 1
 sudo journalctl --since "$since" -u itch-mold -o cat > "$out.server.txt" 2> /dev/null || true
 tail -1 "$out.server.txt"
+if [[ $server_ok == 0 ]]; then
+  echo "WARNING: the retransmission server had stopped before the end; its log is in $out.server.txt" >&2
+fi
 "$pcapgen" expect "$reference" -summary "${max[@]}" > "$out.expected.txt"
 "$pcapgen" orders "$reference" "${max[@]}" > "$out.orders_expected.txt"
 python3 - "$out.uart.txt" "$out.expected.txt" "$out.orders.pcap" "$out.orders_expected.txt" "$reference" "$limit" "$out.ab.txt" <<'PY'
