@@ -214,7 +214,7 @@ let%expect_test "recovery" =
       dropped on A 10, on B 2; duplicates 188, gaps 16, requests 16, replayed 72, lost 0, stale false, buffer peak 9
     A only, server answers half: 189 messages, 186 out (in sequence, no repeats: true; bodies intact: true; all of them: false; out + lost = all: true)
       dropped on A 12, on B 69; duplicates 0, gaps 11, requests 15, replayed 136, lost 3, stale true, buffer peak 49
-    A only, no server: 179 messages, 85 out (in sequence, no repeats: true; bodies intact: true; all of them: false; out + lost = all: true)
-      dropped on A 8, on B 74; duplicates 0, gaps 5, requests 15, replayed 81, lost 94, stale true, buffer peak 49
+    A only, no server: 179 messages, 149 out (in sequence, no repeats: true; bodies intact: true; all of them: false; out + lost = all: true)
+      dropped on A 8, on B 74; duplicates 0, gaps 14, requests 28, replayed 145, lost 30, stale true, buffer peak 49
     |}]
 ;;

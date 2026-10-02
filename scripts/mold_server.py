@@ -20,6 +20,7 @@ Addresses are those of src/net/packet.ml (order_endpoints, request_endpoints,
 retransmission_endpoints, default_endpoints).
 """
 import ctypes
+import signal
 import socket
 import struct
 import sys
@@ -123,9 +124,39 @@ def serve(iface, pcap):
     # promiscuous: requests go to 02:00:00:00:00:02, not this NIC's address
     ifindex = socket.if_nametoindex(iface)
     s.setsockopt(263, 1, struct.pack("IHH8s", ifindex, 1, 0, b""))  # SOL_PACKET, PACKET_ADD_MEMBERSHIP, PROMISC
-    requests = served = unknown = 0
+    requests = served = unknown = dropped = 0
+    last = time.monotonic()
+
+    def summary(final=False):
+        # frames the kernel dropped because this socket's buffer was full
+        # (the counters reset when read)
+        nonlocal dropped
+        try:
+            _, drops = struct.unpack("II", s.getsockopt(263, 6, 8))  # SOL_PACKET, PACKET_STATISTICS
+            dropped += drops
+            kernel = f", {dropped} frames dropped by the kernel"
+        except OSError as e:  # diagnostics only: never stop serving over it
+            kernel = f", kernel drop count unavailable ({e})"
+        print(f"{'total' if final else 'so far'}: {requests} requests, {served} messages served"
+              + (f", {unknown} past the end" if unknown else "") + kernel, flush=True)
+
+    def stop(*_):
+        summary(final=True)
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, stop)
+    # one line a second at most: a line per request was rate-limited by
+    # journald (and slowed the server) at the host's top speed
+    s.settimeout(1.0)
     while True:
-        frame = s.recv(2048)
+        now = time.monotonic()
+        if now - last >= 1.0:
+            summary()
+            last = now
+        try:
+            frame = s.recv(2048)
+        except socket.timeout:
+            continue
         if frame[6:12] != BOARD_MAC or frame[23] != 17:
             continue
         ihl = (frame[14] & 0x0F) * 4
@@ -151,8 +182,6 @@ def serve(iface, pcap):
         if batch:
             s.send(udp_frame(BOARD_MAC, HOST_MAC, HOST_IP, BOARD_IP, REQUEST_PORT, BOARD_PORT,
                              mold_packet(session, first, batch)))
-        print(f"request {requests}: {count} from {seq}; served {served} messages so far"
-              + (f", {unknown} past the end" if unknown else ""), flush=True)
 
 
 def heartbeat(iface, pcap, n):

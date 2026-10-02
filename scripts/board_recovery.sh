@@ -76,7 +76,7 @@ sudo systemd-run --quiet --collect --unit=itch-mold \
   python3 "$PWD/scripts/mold_server.py" serve "$iface" "$PWD/$reference"
 rm -f "$out.orders.pcap"
 sudo systemd-run --quiet --collect --unit=itch-orders \
-  tcpdump -i "$iface" -B 65536 -Z "$USER" -w "$PWD/$out.orders.pcap" 'ether src 02:00:00:00:00:10 and udp dst port 26400'
+  tcpdump -i "$iface" -B 65536 -Z "$USER" -w "$PWD/$out.orders.pcap" 'ether src 02:00:00:00:00:10'
 # the server reads the whole session first
 for _ in $(seq 1 120); do
   sudo journalctl --since "$since" -u itch-mold -o cat 2> /dev/null | grep -q '^serving' && break
@@ -114,7 +114,7 @@ if [[ $server_ok == 0 ]]; then
 fi
 "$pcapgen" expect "$reference" -summary "${max[@]}" > "$out.expected.txt"
 "$pcapgen" orders "$reference" "${max[@]}" > "$out.orders_expected.txt"
-python3 - "$out.uart.txt" "$out.expected.txt" "$out.orders.pcap" "$out.orders_expected.txt" "$reference" "$limit" "$out.ab.txt" <<'PY'
+python3 - "$out.uart.txt" "$out.expected.txt" "$out.orders.pcap" "$out.orders_expected.txt" "$reference" "$limit" "$out.ab.txt" "$out.server.txt" <<'PY'
 import os
 import re
 import struct
@@ -165,12 +165,21 @@ if not line.startswith("S1"):
 for key in ("fcs", "err", "ovf"):
     if b.get(key, -1):
         bad.append(f"{key}={b.get(key)}")
-got = []
+# the board's frames: orders (UDP port 26400) and re-requests (26402)
+got, requests_seen = [], 0
 if os.path.exists(sys.argv[3]):
     with open(sys.argv[3], "rb") as f:
         f.read(24)
         while len(rec := f.read(16)) == 16:
-            got.append(f.read(struct.unpack_from("<I", rec, 8)[0]).hex())
+            frame = f.read(struct.unpack_from("<I", rec, 8)[0])
+            port = struct.unpack_from(">H", frame, 36)[0]
+            if port == 26400:
+                got.append(frame.hex())
+            elif port == 26402:
+                requests_seen += 1
+server = [l for l in open(sys.argv[8]).read().splitlines() if l.startswith(("total:", "so far:"))]
+print(f"re-requests: board sent {b['rqs']}, host captured {requests_seen}; server "
+      + (server[-1] if server else "printed no summary"))
 want_orders = [l for l in open(sys.argv[4]).read().split() if not l.startswith("orders=")]
 print(f"orders: board sent {b['osent']} (dropped {b['odrop']}), host captured {len(got)}, model {len(want_orders)}; "
       f"tick-to-trade p50 {b['t50']}, max {b['tmax']} cycles")

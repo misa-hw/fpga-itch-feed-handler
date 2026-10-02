@@ -259,7 +259,7 @@ image, which adds the MACs, the GMII capture, the latency monitor, the
 order entry, the UART and the counters, meets it too: WNS +0.075 ns, WHS
 +0.016 ns, two endpoints within 0.1 ns, and the worst paths four logic
 levels into BRAM pins, mostly routing. With gap recovery (section 12):
-WNS +0.028 ns, WHS +0.023 ns.
+WNS +0.070 ns, WHS +0.026 ns.
 
 That image had first closed at WNS +0.016 ns, WHS +0.001 ns, and the margin
 turned out to depend on how synthesis retiming happened to partition the
@@ -571,8 +571,8 @@ missing. For each arriving message, numbered S:
 | S ≥ L | parked; L = S + 1 (a hole appears if S > L) |
 | otherwise | dropped: a duplicate (the other line, a retransmission already served), or a missing message arriving out of order, which will be asked for |
 
-The buffer is a byte RAM for message bodies (16 KB) and a FIFO of
-(sequence number, length) for 1,024 messages; a message is committed only
+The buffer is a byte RAM for message bodies (32 KB) and a FIFO of
+(sequence number, length) for 2,048 messages; a message is committed only
 once its last byte is in, and a full buffer drops the newcomer, which just
 makes another hole. Parked messages are in increasing order by
 construction, so the head of the FIFO is the oldest. A replay engine passes
@@ -599,9 +599,9 @@ very end of a burst is seen too.
 
 **What it costs.** No latency: a message that arrives in sequence goes
 through with the same 2 cycles as before, and the fast path is unchanged
-(it acts on messages in sequence). In the board image: 1,284 LUTs and 6.5
-BRAM tiles (21,000 LUTs, 33%, and 111.5 of 135 tiles in all), and it still
-meets 125 MHz (WNS +0.028 ns, WHS +0.023 ns). Closing it took two
+(it acts on messages in sequence). In the board image: 1,333 LUTs and 12.5
+BRAM tiles (21,041 LUTs, 33%, and 117.5 of 135 tiles in all), and it still
+meets 125 MHz (WNS +0.070 ns, WHS +0.026 ns). Closing it took two
 registers: the decision on a message's first byte compares its number with
 L a cycle ahead (both are settled at least two bytes earlier, during the
 block length), and the "most parked at once" statistic follows the
@@ -613,3 +613,15 @@ and messages out plus lost equals the session. `tests/hw/test_board.ml` does
 the same through the whole board, the server answering the requests seen
 on the transmit pins: the change count, hash and orders equal the model's
 over every message.
+
+**On the board** (`results/board_recovery.txt`): the whole session on two
+lines, each losing about 2% of packets and 643 packets lost on both, at
+60,000 frames/s, with `scripts/mold_server.py` answering re-requests. The
+board passed on all 1,752,946 messages in sequence (18,944 requests,
+121,031 messages replayed, none given up) and ended with the same changes,
+hash and 53 orders as a run with no losses. At the host's top speed
+(126,000 frames/s, where the PC's own drops and reorders add some 70,000
+more gaps) the 16 KB buffer of that image ran out of bytes while requests
+waited, and 132 messages were given up and flagged: the reason the buffer
+is now 32 KB, and that a full buffer gives up a hole at once when the
+server has stopped answering.

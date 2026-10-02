@@ -1,0 +1,38 @@
+Gap recovery on the board (2026-10-02): QMTech Wukong, 1 Gb/s image with
+MoldUDP64 A/B arbitration, re-requests and the replay buffer (16 KB of
+bodies, 1,024 messages), scripts/board_recovery.sh.
+
+Feed: build/tracked.pcap (1,655,589 packets, 1,752,946 messages) on two
+lines, A as recorded and B 4 packets behind (bin/pcapgen.exe ab): 33,215
+packets lost on A, 32,875 on B, 643 on both (recoverable only by
+retransmission). 3,245,088 frames in all. Retransmission server:
+scripts/mold_server.py, answering from the recorded session. The board must
+end with the reference book's changes and orders over the whole session.
+
+1. 60,000 frames/s (54 s): PASS
+  S1 frm=0031ceb3 acc=0031ce20 flt=00000093 err=00000000 fcs=00000000 msg=001abf72 gap=00007f26 dup=0019fdc8 rpl=0001d8c7 rqs=00004a00 mlost=00000000 bovf=00000000 bpk=00d1 stl=0 cmd=001a8f98 chg=000fed0f hash=186f6e17 lost=000fbed5 kick=0003b6f1 rfl=000013e3 ovf=00000000 ord=00006a14 lvl=00001d0a map=ff blen=00000000 dord=001a8f98 fcmd=001a8f98 fmax=00000002 uns=00000000 bst=01 bfe=1 clk=0b2b1639 lat=001a8f98 l50=0014 l99=001f l999=0028 lmax=00000068 osent=00000035 ofast=00000035 odrop=00000000 tt=00000035 t50=000e t99=000e tmax=0000000e
+  board: 3,264,032 frames accepted, 1,752,946 messages passed on of
+         1,752,946; 1,703,368 duplicates dropped, 32,550 gaps seen, 18,944
+         re-requests, 121,031 messages replayed from the buffer (peak 209
+         parked), 0 dropped by a full buffer, 0 given up, not stale
+  book:  1,043,727 changes, hash 186f6e17: equal to the model over the
+         whole session (the same as a run with no losses)
+  orders: 53 sent, 53 captured, equal to the model's; all 53 decided on the
+         fast path, tick-to-trade 14 cycles (112 ns) pin to pin for every one
+  book latency on chip: p50 20, p99 31, p99.9 40 cycles, max 104
+
+2. Host's top speed, 126,158 frames/s (26 s): FAIL, 132 messages given up
+  board: 1,752,814 messages passed on; 3,557,935 duplicates, 102,909 gaps,
+         81,575 re-requests, 389,634 replayed (peak 586 parked), 7,630
+         dropped by a full buffer, 132 given up, stale flag set
+  book:  787,086 changes (hash 14c19d02), wrong from the first loss on, as
+         expected once a message is given up; 48 of the 53 orders
+  The body buffer ran out of bytes (586 messages, 16 KB) while requests
+  waited for answers; the server logged a line per request, which journald
+  rate-limits (37,500 of 81,575 logged), so whether it missed requests is
+  unknown. Changes after this run: 32 KB / 2,048-message buffer; a full
+  buffer gives the open hole up at once once a hole has gone unanswered
+  (on a first run with a crashed server, every hole waited 8 ms and the
+  full buffer turned away almost the whole feed); the server logs once a
+  second with the kernel's drop count, and the capture records requests.
+  Raw files: board_recovery_top.*

@@ -34,8 +34,14 @@
      session, E, and a count up to the buffer's oldest, or L), and again
      every [retry] cycles without progress. After [max_retries] requests the
      missing messages are given up: they are counted as lost, [stale] is
-     set, and the buffer is passed on. A full buffer drops the incoming
-     message, which only makes another hole. *)
+     set, and the buffer is passed on.
+   - A full buffer drops the incoming message: one more hole, which the
+     server fills like any other. But once a hole has been given up
+     unanswered, the server is taken to be silent, and from then on a full
+     buffer gives the open hole up at once, until a request is answered:
+     waiting would only fill the buffer with holes (seen on the board with
+     no server: 8 ms of retries per hole, the buffer full after 1,024
+     messages, and almost every message after the first loss lost). *)
 
 open! Core
 open! Hardcaml
@@ -97,14 +103,16 @@ module Recovery = struct
     ; buffer_messages : int (* messages parked *)
     }
 
-  (* 16 us to wait for the B line, 1 ms per retry: at 125 MHz *)
+  (* 16 us to wait for the B line, 1 ms per retry: at 125 MHz. 32 KB of
+     bodies: with 16 KB, the buffer ran out of bytes (peak 586 messages) on
+     the board at the host's top speed, 126,000 frames/s on two lines. *)
   let default =
     { window = 2_000
     ; retry = 125_000
     ; max_retries = 8
     ; max_request = 1024
-    ; buffer_bytes = 16_384
-    ; buffer_messages = 1024
+    ; buffer_bytes = 32_768
+    ; buffer_messages = 2048
     }
   ;;
 end
@@ -260,7 +268,10 @@ let create ?recovery scope (i : _ I.t) : _ O.t =
       let due =
         mux2 (retries.value ==:. 0) (timer.value ==:. r.window - 1) (timer.value ==:. r.retry - 1)
       in
-      let give_up = waiting &: ~:progress &: due &: (retries.value ==:. r.max_retries) in
+      let full = Variable.reg spec ~width:1 (* the buffer turned a message away *) in
+      let silent = Variable.reg spec ~width:1 (* a hole was given up unanswered *) in
+      let timed_out = waiting &: ~:progress &: due &: (retries.value ==:. r.max_retries) in
+      let give_up = timed_out |: (waiting &: full.value &: silent.value) in
       let ask = waiting &: ~:progress &: due &: ~:give_up in
       let wanted = missing_end -: expected.value in
       let rq_count =
@@ -287,11 +298,19 @@ let create ?recovery scope (i : _ I.t) : _ O.t =
             (header_end &: empty_packet &: synced.value &: (pkt_seq.value >: live.value))
             [ live <-- pkt_seq.value; incr cnt_gaps ]
         ]
-      , [ (* parking: write the body; on its last byte, commit it *)
+      , [ (* a full buffer while a hole is open and the server is silent:
+             give the hole up (once) *)
+          full <-- (full.value &: waiting &: ~:give_up)
+        ; when_ timed_out [ silent <-- vdd ]
+        ; (* answered: E moved after a request, and not by giving up *)
+          when_
+            (progress &: (retries.value <>:. 0) &: ~:(reg spec give_up))
+            [ silent <-- gnd ]
+        ; (* parking: write the body; on its last byte, commit it *)
           when_
             decide_now
             [ parking <-- parked_ok
-            ; when_ (park &: ~:room) [ incr cnt_overflows ]
+            ; when_ (park &: ~:room) [ incr cnt_overflows; full <-- vdd ]
             ; when_ parked_ok [ when_ s_gt_live [ incr cnt_gaps ] ]
             ]
         ; when_

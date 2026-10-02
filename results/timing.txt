@@ -83,3 +83,11 @@ bodies, 1,024 messages), same flow and options as above.
   GMII inputs +0.444 / +0.450 ns, outputs +1.654 / +3.688 ns (setup / hold)
   Utilization: 20,992 LUTs (33.1%), 16,355 registers (12.9%),
                111.5 BRAM tiles (82.6%); recovery adds 1,284 LUTs, 6.5 tiles
+
+Gap recovery, 32 KB / 2,048-message buffer and the full-buffer give-up
+(2026-10-02; the 16 KB buffer ran out of bytes on the board at top speed):
+  WNS +0.070 ns, WHS +0.026 ns, 0 failing endpoints: MET
+  endpoints within 0.1 / 0.2 / 0.5 / 1.0 ns of setup: 13 / 50 / 520 / 2,988
+  GMII inputs +0.444 / +0.450 ns, outputs +1.654 / +3.688 ns (setup / hold)
+  Utilization: 21,041 LUTs (33.2%), 16,443 registers (13.0%),
+               117.5 BRAM tiles (87.0%); recovery adds 1,333 LUTs, 12.5 tiles
