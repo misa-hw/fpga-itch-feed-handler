@@ -36,3 +36,20 @@ end with the reference book's changes and orders over the whole session.
   full buffer turned away almost the whole feed); the server logs once a
   second with the kernel's drop count, and the capture records requests.
   Raw files: board_recovery_top.*
+
+3. Host's top speed, 137,411 frames/s (24 s), after the changes above
+   (32 KB / 2,048-message buffer, silent-server give-up): FAIL, 96 given up
+  S1 frm=0033367b acc=00333676 flt=00000005 err=00000000 fcs=00000000 msg=001abf12 gap=00018ef6 dup=0035f9b0 rpl=00069d7b rqs=00013cce mlost=00000060 bovf=00000022 bpk=048e stl=1 cmd=001a8f38 chg=000a2914 hash=acd26321 lost=000a14c2 kick=0003c2e1 rfl=0000126a ovf=00000000 ord=00006a3d lvl=00001d25 map=ff blen=00000000 dord=001a8f38 fcmd=001a8f38 fmax=00000009 uns=00000000 bst=01 bfe=1 clk=241d698d lat=001a8f38 l50=0014 l99=001f l999=0029 lmax=000007fd osent=00000035 ofast=00000035 odrop=00000000 tt=00000035 t50=000e t99=0015 tmax=00000015
+  board: 1,752,850 messages passed on; 102,134 gaps, 81,102 re-requests,
+         433,531 replayed (peak 1,166 parked), 34 dropped by a full buffer
+         (7,630 before), 96 given up (132 before), stale flag set
+  requests: 81,102 sent by the board, 81,102 captured on the host, 81,102
+         answered by the server with 1,854,465 messages; the kernel dropped
+         no frame on the server's socket. So requests are not lost and the
+         server keeps up; the answers go back out through the same transmit
+         path that drops and reorders the host's frames at top speed
+         (section 10 of DESIGN.md), the suspected cause, not yet proven:
+         the server now counts the frames it sends, to compare with the
+         111,187 frames the board accepted beyond the feed.
+  orders: 53 of 53 equal to the model's; tick-to-trade p50 14 cycles, max
+         21 (an order waited for a re-request already being sent)

@@ -124,7 +124,7 @@ def serve(iface, pcap):
     # promiscuous: requests go to 02:00:00:00:00:02, not this NIC's address
     ifindex = socket.if_nametoindex(iface)
     s.setsockopt(263, 1, struct.pack("IHH8s", ifindex, 1, 0, b""))  # SOL_PACKET, PACKET_ADD_MEMBERSHIP, PROMISC
-    requests = served = unknown = dropped = 0
+    requests = served = unknown = dropped = frames = 0
     last = time.monotonic()
 
     def summary(final=False):
@@ -137,7 +137,7 @@ def serve(iface, pcap):
             kernel = f", {dropped} frames dropped by the kernel"
         except OSError as e:  # diagnostics only: never stop serving over it
             kernel = f", kernel drop count unavailable ({e})"
-        print(f"{'total' if final else 'so far'}: {requests} requests, {served} messages served"
+        print(f"{'total' if final else 'so far'}: {requests} requests, {served} messages served in {frames} frames"
               + (f", {unknown} past the end" if unknown else "") + kernel, flush=True)
 
     def stop(*_):
@@ -175,6 +175,7 @@ def serve(iface, pcap):
             if batch and size + 2 + len(m) > MAX_PAYLOAD:
                 s.send(udp_frame(BOARD_MAC, HOST_MAC, HOST_IP, BOARD_IP, REQUEST_PORT, BOARD_PORT,
                                  mold_packet(session, first, batch)))
+                frames += 1
                 batch, first, size = [], k, 20
             batch.append(m)
             size += 2 + len(m)
@@ -182,6 +183,7 @@ def serve(iface, pcap):
         if batch:
             s.send(udp_frame(BOARD_MAC, HOST_MAC, HOST_IP, BOARD_IP, REQUEST_PORT, BOARD_PORT,
                              mold_packet(session, first, batch)))
+            frames += 1
 
 
 def heartbeat(iface, pcap, n):

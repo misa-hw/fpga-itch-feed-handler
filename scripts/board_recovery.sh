@@ -96,7 +96,8 @@ fi
 pps="${PPS:-60000}"
 rate=(--pps="$pps")
 [[ $pps == top ]] && rate=(--topspeed)
-sudo tcpreplay --intf1="$iface" "${rate[@]}" --preload-pcap "$feed" 2>&1 | tee "$out.tcpreplay.txt"
+echo "replaying $feed at ${pps} frames/s; progress every 5 s"
+sudo tcpreplay --intf1="$iface" "${rate[@]}" --stats=5 --preload-pcap "$feed" 2>&1 | tee "$out.tcpreplay.txt"
 # an exchange's heartbeats: losses at the very end show up too
 sleep 0.5
 sudo python3 scripts/mold_server.py heartbeat "$iface" "$reference" 3
@@ -114,7 +115,7 @@ if [[ $server_ok == 0 ]]; then
 fi
 "$pcapgen" expect "$reference" -summary "${max[@]}" > "$out.expected.txt"
 "$pcapgen" orders "$reference" "${max[@]}" > "$out.orders_expected.txt"
-python3 - "$out.uart.txt" "$out.expected.txt" "$out.orders.pcap" "$out.orders_expected.txt" "$reference" "$limit" "$out.ab.txt" "$out.server.txt" <<'PY'
+python3 - "$out.uart.txt" "$out.expected.txt" "$out.orders.pcap" "$out.orders_expected.txt" "$reference" "$limit" "$out.ab.txt" "$out.server.txt" "$out.tcpreplay.txt" <<'PY'
 import os
 import re
 import struct
@@ -180,6 +181,14 @@ if os.path.exists(sys.argv[3]):
 server = [l for l in open(sys.argv[8]).read().splitlines() if l.startswith(("total:", "so far:"))]
 print(f"re-requests: board sent {b['rqs']}, host captured {requests_seen}; server "
       + (server[-1] if server else "printed no summary"))
+# answers: frames the board received beyond the feed (and 3 heartbeats)
+sent = re.search(r"Actual: (\d+) packets", open(sys.argv[9]).read())
+answers = re.search(r"in (\d+) frames", server[-1]) if server else None
+if sent and answers:
+    got_extra = b["acc"] - int(sent.group(1)) - 3  # accepted frames, beyond the feed
+    print(f"answers: server sent {answers.group(1)} frames, the board received {got_extra}"
+          + ("" if got_extra >= int(answers.group(1)) else
+             f" ({int(answers.group(1)) - got_extra} lost between the server and the board)"))
 want_orders = [l for l in open(sys.argv[4]).read().split() if not l.startswith("orders=")]
 print(f"orders: board sent {b['osent']} (dropped {b['odrop']}), host captured {len(got)}, model {len(want_orders)}; "
       f"tick-to-trade p50 {b['t50']}, max {b['tmax']} cycles")

@@ -586,7 +586,9 @@ buffer's head (or L), at most 1,024 messages; again every 1 ms without
 progress, up to 8 times. The request is a MoldUDP64 header (session,
 sequence number, count) in a UDP frame from the transmit MAC, which it
 shares with the orders: a request waits while an order is queued or a
-preamble is pre-formed, so orders never wait for it. The frame is built
+preamble is pre-formed. An order can still wait for a request already on
+the wire: on the board at top speed, with 81,000 requests, the slowest of 53
+orders took 21 cycles instead of 14. The frame is built
 the way orders are, a constant header and three registered fields, padded
 to the order frame's length. The session is the one of the last complete
 packet header.
@@ -624,4 +626,8 @@ hash and 53 orders as a run with no losses. At the host's top speed
 more gaps) the 16 KB buffer of that image ran out of bytes while requests
 waited, and 132 messages were given up and flagged: the reason the buffer
 is now 32 KB, and that a full buffer gives up a hole at once when the
-server has stopped answering.
+server has stopped answering. With those, at 137,000 frames/s: 96 given
+up, 34 messages turned away by the buffer (peak 1,166 parked), and every
+one of the 81,102 requests reached the server and was answered. The
+answers leave through the host's transmit path, which drops frames at that
+rate (section 10): the likely limit, still to be confirmed.
