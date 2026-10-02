@@ -61,6 +61,12 @@ for _ in $(seq 1 20); do
   sleep 0.5
 done
 grep -q '^S1 ' "$out.uart.txt" || { echo "no S1 status line: the board's receive clock is not running" >&2; exit 1; }
+# with gap recovery the board repairs the sender's drops and reorders, which
+# this test's model (what the host really sent) does not
+if grep '^S1 ' "$out.uart.txt" | tail -1 | grep -q ' rqs='; then
+  echo "this bitstream has gap recovery; use scripts/board_recovery.sh" >&2
+  exit 1
+fi
 # record what leaves the host. tcpdump runs as a transient systemd unit:
 # AppArmor blocks signals to it from some terminals (e.g. VS Code's).
 rm -f "$out.host.pcap"

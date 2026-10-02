@@ -54,9 +54,10 @@ module O = struct
     ; cmd : 'a (* a book command enters the book's FIFO (Latency_monitor) *)
     ; command : 'a Symbol_filter.Command.t [@rtlmangle "_"] (* that command *)
     ; book_quiet : 'a (* the book is idle with nothing queued *)
-    ; msg : 'a Stream.Message.t [@rtlmangle "_"] (* the MoldUDP64 message stream *)
+    ; msg : 'a Stream.Message.t [@rtlprefix "stream_"] (* the MoldUDP64 message stream *)
     ; slot_locates : 'a array [@length Symbol_filter.num_slots] [@bits 16]
     ; slot_mapped : 'a [@bits Symbol_filter.num_slots]
+    ; request : 'a Mold_parser.Request.t [@rtlmangle "rq_"] (* gap recovery *)
     }
   [@@deriving hardcaml]
 end
@@ -70,9 +71,11 @@ let command_offset = 5
    frame and MoldUDP64 parsers' registers (tests/hw/test_order_entry.ml). *)
 let message_offset = 2
 
-let create ?p ?fifo_capacity scope (i : _ I.t) : _ O.t =
+let create ?p ?fifo_capacity ?extra ?recovery scope (i : _ I.t) : _ O.t =
   let spec = Reg_spec.create ~clock:i.clock ~clear:i.clear () in
-  let front = Rx_front.hierarchical scope { clock = i.clock; clear = i.clear; cfg = i.cfg.net; rx = i.rx } in
+  let front =
+    Rx_front.hierarchical ?extra ?recovery scope { clock = i.clock; clear = i.clear; cfg = i.cfg.net; rx = i.rx }
+  in
   let dec = Itch_decoder.hierarchical scope { clock = i.clock; clear = i.clear; msg = front.msg } in
   let filter =
     Symbol_filter.hierarchical
@@ -114,5 +117,6 @@ let create ?p ?fifo_capacity scope (i : _ I.t) : _ O.t =
   ; msg = front.msg
   ; slot_locates = filter.locates
   ; slot_mapped = filter.mapped
+  ; request = front.request
   }
 ;;

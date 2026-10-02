@@ -207,7 +207,8 @@ let orders =
      and quantity = flag "-quantity" (optional_with_default Ouch.board_rule.quantity int) ~doc:"N shares"
      and mold_receiver =
        flag "-mold-receiver" no_arg ~doc:" drop late messages, as the board does (see expect)"
-     and summary_only = flag "-summary" no_arg ~doc:" print only the number of orders" in
+     and summary_only = flag "-summary" no_arg ~doc:" print only the number of orders"
+     and max_packets = flag "-max-packets" (optional int) ~doc:"N only the first N packets" in
      fun () ->
        let symbols = [ "QQQ"; "SPY"; "IWM"; "DIA"; "TQQQ"; "SQQQ"; "AMD"; "UVXY" ] in
        let slot, _ =
@@ -227,7 +228,7 @@ let orders =
            true
        in
        ignore
-         (Pcap.iter pcap ~f:(fun ~ts_ns:_ frame ->
+         (Pcap.iter ?max_packets pcap ~f:(fun ~ts_ns:_ frame ->
             match Packet.parse frame with
             | Error _ -> ()
             | Ok p ->
@@ -249,8 +250,51 @@ let orders =
        printf "orders=%d\n" strategy.sent)
 ;;
 
+(* Gap recovery on the board: the feed on two lines, A as recorded and B
+   (Packet.line_b_endpoints) [skew] packets behind, each losing packets at
+   random, a few lost on both, which only a retransmission recovers. *)
+let ab =
+  Command.basic
+    ~summary:"A/B feed with random packet losses on each line"
+    (let%map_open.Command pcap = anon ("PCAP" %: Filename_unix.arg_type)
+     and out = anon ("OUT" %: string)
+     and drop_a = flag "-drop-a" (optional_with_default 0.01 float) ~doc:"P chance a packet is lost on A"
+     and drop_b = flag "-drop-b" (optional_with_default 0.01 float) ~doc:"P chance a packet is lost on B"
+     and skew = flag "-skew" (optional_with_default 4 int) ~doc:"N packets B runs behind A"
+     and seed = flag "-seed" (optional_with_default 1 int) ~doc:"N random seed"
+     and max_packets = flag "-max-packets" (optional int) ~doc:"N only the first N packets" in
+     fun () ->
+       let rand = Random.State.make [| seed |] in
+       let w = Pcap.Writer.create out in
+       let b_late = Queue.create () in
+       let n = ref 0 and lost_a = ref 0 and lost_b = ref 0 and lost_both = ref 0 in
+       let last_ts = ref 0 in
+       let send ~ts_ns f = Pcap.Writer.write w ~ts_ns f in
+       ignore
+         (Pcap.iter ?max_packets pcap ~f:(fun ~ts_ns frame ->
+            incr n;
+            last_ts := ts_ns;
+            let keep p = Float.(Random.State.float rand 1.0 >= p) in
+            let a = keep drop_a and b = keep drop_b in
+            if not a then incr lost_a;
+            if not b then incr lost_b;
+            if (not a) && not b then incr lost_both;
+            if a then send ~ts_ns frame;
+            (match Packet.parse frame with
+             | Ok p when b -> Queue.enqueue b_late (Packet.frame Packet.line_b_endpoints p.udp_payload)
+             | _ -> Queue.enqueue b_late "");
+            if Queue.length b_late > skew
+            then (
+              let f = Queue.dequeue_exn b_late in
+              if not (String.is_empty f) then send ~ts_ns f))
+          : int);
+       Queue.iter b_late ~f:(fun f -> if not (String.is_empty f) then send ~ts_ns:!last_ts f);
+       Pcap.Writer.close w;
+       printf "packets=%d lost_a=%d lost_b=%d lost_both=%d\n" !n !lost_a !lost_b !lost_both)
+;;
+
 let () =
   Command_unix.run
     (Command.group
        ~summary:"MoldUDP64 pcap generator"
-       [ "gen", gen; "check", check; "expect", expect; "orders", orders ])
+       [ "gen", gen; "check", check; "expect", expect; "orders", orders; "ab", ab ])

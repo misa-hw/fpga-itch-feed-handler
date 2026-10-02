@@ -170,6 +170,38 @@ let order_endpoints =
   }
 ;;
 
+(* Gap recovery (src/hw/mold_parser.ml). The B line: the same feed on a
+   second multicast group. Requests go from the board to the host's
+   retransmission server; the server's MoldUDP64 packets come back to the
+   board's own address. *)
+let line_b_endpoints =
+  let dst_ip = Ip.of_string "233.54.12.112" in
+  { default_endpoints with dst_mac = Mac.of_multicast_ip dst_ip; dst_ip; dst_port = 26478 }
+;;
+
+let request_endpoints =
+  { order_endpoints with src_port = 26401; dst_port = 26402 }
+;;
+
+let retransmission_endpoints =
+  { src_mac = request_endpoints.dst_mac
+  ; dst_mac = request_endpoints.src_mac
+  ; src_ip = request_endpoints.dst_ip
+  ; dst_ip = request_endpoints.src_ip
+  ; src_port = request_endpoints.dst_port
+  ; dst_port = request_endpoints.src_port
+  }
+;;
+
+(* MoldUDP64 request packet: session (10), sequence number (8), count (2) *)
+let mold_request ~session ~seq ~count =
+  let b = Bytes.make 20 '\000' in
+  Bytes.From_string.blit ~src:session ~src_pos:0 ~dst:b ~dst_pos:0 ~len:10;
+  put_be b ~pos:10 ~len:8 seq;
+  put_be b ~pos:18 ~len:2 count;
+  Bytes.to_string b
+;;
+
 (* Build a complete Ethernet frame around a UDP payload. [ip_id] is the IPv4
    identification field (incremented per packet by the sender).
    [~udp_checksum:false] sends a zero UDP checksum ("none", allowed over

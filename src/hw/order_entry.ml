@@ -28,6 +28,7 @@ module Stats = struct
   type 'a t =
     { orders : 'a [@bits 32] (* frames sent *)
     ; fast : 'a [@bits 32] (* of which decided on the fast path *)
+    ; requests : 'a [@bits 32] (* MoldUDP64 re-requests sent *)
     ; dropped : 'a [@bits 32] (* triggers lost to a full queue *)
     ; t2t : 'a Latency_monitor.Stats.t [@rtlmangle "_"]
     }
@@ -56,6 +57,7 @@ let create
   ~(rule : Itch_model.Ouch.Rule.t)
   ?(t2t_offset = 0)
   ?fast
+  ?(request : Signal.t Mold_parser.Request.t option)
   scope
   ~clock
   ~clear
@@ -193,23 +195,66 @@ let create
       ]
   in
   assert (List.length enter_order = Itch_model.Ouch.enter_order_len);
-  let frame = concat_lsb (const_bytes header @ enter_order) in
-  let tx = Gmii_tx.create ~prestart ~cancel ~spec ~start ~frame () in
+  let order_frame = concat_lsb (const_bytes header @ enter_order) in
+  (* MoldUDP64 re-requests (gap recovery) share the transmit MAC: one
+     pending request, replaced by a newer one; it goes out only when no
+     order is waiting or being decided. The 62-byte request is padded to
+     the order frame's length: receivers go by the IP and UDP lengths and
+     ignore Ethernet padding. *)
+  let rq_start, rq_frame, requests_sent =
+    match request with
+    | None -> gnd, zero (Signal.width order_frame), zero 32
+    | Some rq ->
+      let pending = Always.Variable.reg spec ~width:1 in
+      let r_session = Always.Variable.reg spec ~width:80 in
+      let r_seq = Always.Variable.reg spec ~width:64 in
+      let r_count = Always.Variable.reg spec ~width:16 in
+      let go = wire 1 in
+      let header =
+        String.prefix
+          (Net.Packet.frame
+             ~udp_checksum:false
+             Net.Packet.request_endpoints
+             (Net.Packet.mold_request ~session:(String.make 10 ' ') ~seq:0 ~count:0))
+          Net.Packet.payload_offset
+      in
+      let bytes =
+        const_bytes header
+        @ be_bytes r_session.value 10
+        @ be_bytes r_seq.value 8
+        @ be_bytes r_count.value 2
+      in
+      let frame = concat_lsb (bytes @ List.init (Signal.width order_frame / 8 - List.length bytes) ~f:(fun _ -> zero 8)) in
+      Always.(
+        compile
+          [ when_ go [ pending <-- gnd ]
+          ; when_
+              rq.valid
+              [ pending <-- vdd; r_session <-- rq.session; r_seq <-- rq.seq; r_count <-- rq.count ]
+          ]);
+      assign go (pending.value &: queue.empty &: ~:(tx_busy) &: ~:prestart);
+      go, frame, reg_fb spec ~width:32 ~f:(fun n -> mux2 go (n +:. 1) n)
+  in
+  let frame = mux2 rq_start rq_frame order_frame in
+  let tx = Gmii_tx.create ~prestart ~cancel ~spec ~start:(start |: rq_start) ~frame () in
   assign tx_busy tx.busy;
   assign tx_holding tx.holding;
   assign start (~:(queue.empty) &: (~:(tx.busy) |: tx.holding));
   (* ---- tick-to-trade ---- *)
   let t_start = reg spec ~enable:start q_time in
+  (* the frame going out is an order (not a request): it alone is timed *)
+  let sending_order = reg_fb spec ~width:1 ~f:(fun o -> mux2 start vdd (mux2 rq_start gnd o)) in
   let t2t = now -: t_start +:. t2t_offset in
   { txen = tx.txen
   ; txd = tx.txd
   ; stats =
       { Stats.orders
       ; fast = fast_orders
+      ; requests = requests_sent
       ; dropped
-      ; t2t = Latency_monitor.histogram ~spec ~clock ~valid:tx.first ~sample:t2t
+      ; t2t = Latency_monitor.histogram ~spec ~clock ~valid:(tx.first &: sending_order) ~sample:t2t
       }
-  ; t2t_valid = tx.first
+  ; t2t_valid = tx.first &: sending_order
   ; t2t
   }
 ;;

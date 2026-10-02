@@ -258,7 +258,8 @@ routing), using 23% of the LUTs and 73% of the block RAM. The 1 Gb/s board
 image, which adds the MACs, the GMII capture, the latency monitor, the
 order entry, the UART and the counters, meets it too: WNS +0.075 ns, WHS
 +0.016 ns, two endpoints within 0.1 ns, and the worst paths four logic
-levels into BRAM pins, mostly routing.
+levels into BRAM pins, mostly routing. With gap recovery (section 12):
+WNS +0.028 ns, WHS +0.023 ns.
 
 That image had first closed at WNS +0.016 ns, WHS +0.001 ns, and the margin
 turned out to depend on how synthesis retiming happened to partition the
@@ -543,3 +544,72 @@ exactly 14 cycles, 112 ns, pin to pin. The previous image, which waited
 for the book for every order, measured 36 cycles median and 48 worst (288
 and 384 ns) on the same data. The PHY's own receive and transmit latency
 comes on top and is not measured here.
+
+## 12. Gap recovery: A/B lines and retransmission
+
+A UDP feed loses packets, and a book that misses one Add or Delete is wrong
+until the session ends. Exchanges therefore send each feed twice, on two
+multicast groups (lines A and B) over separate paths, and run a
+retransmission server that answers MoldUDP64 requests. The board uses
+both (`src/hw/mold_parser.ml`, with `~recovery`; the gigabit image has it).
+
+**Where it lives.** Only the MoldUDP64 stage sees every sequence number,
+including those of messages the symbol map later drops, so recovery is
+done there, on whole messages, and everything downstream is unchanged:
+the decoder, the book and the order path still see one message after
+another in sequence, with no added cycle when nothing is missing. The
+frame filter accepts the B group and the retransmission address as extra
+endpoints, each with its own comparison chain.
+
+**Two counters.** E is the next message to pass on; L is the next one the
+feed has not yet shown. Messages between E and L are parked in a buffer or
+missing. For each arriving message, numbered S:
+
+| case | action |
+|---|---|
+| S = E, and not already parked | straight through, as without recovery |
+| S ≥ L | parked; L = S + 1 (a hole appears if S > L) |
+| otherwise | dropped: a duplicate (the other line, a retransmission already served), or a missing message arriving out of order, which will be asked for |
+
+The buffer is a byte RAM for message bodies (16 KB) and a FIFO of
+(sequence number, length) for 1,024 messages; a message is committed only
+once its last byte is in, and a full buffer drops the newcomer, which just
+makes another hole. Parked messages are in increasing order by
+construction, so the head of the FIFO is the oldest. A replay engine passes
+it on as soon as it is numbered E; the decision rules keep the replay and a
+live message from ever going out on the same cycle, and the replay reads
+the RAM one byte per cycle like a live packet.
+
+**Asking for the missing.** While E is missing, a timer runs. After 16 µs
+(the window for the B line to catch up) the board asks for E up to the
+buffer's head (or L), at most 1,024 messages; again every 1 ms without
+progress, up to 8 times. The request is a MoldUDP64 header (session,
+sequence number, count) in a UDP frame from the transmit MAC, which it
+shares with the orders: a request waits while an order is queued or a
+preamble is pre-formed, so orders never wait for it. The frame is built
+the way orders are, a constant header and three registered fields, padded
+to the order frame's length. The session is the one of the last complete
+packet header.
+
+**Giving up.** After the last request, the missing messages are counted as
+lost, a sticky stale flag is set, and the parked messages go on: the book
+may be wrong from then on, and the flag says so. Heartbeat and
+end-of-session packets carry the next sequence number, so a loss at the
+very end of a burst is seen too.
+
+**What it costs.** No latency: a message that arrives in sequence goes
+through with the same 2 cycles as before, and the fast path is unchanged
+(it acts on messages in sequence). In the board image: 1,284 LUTs and 6.5
+BRAM tiles (21,000 LUTs, 33%, and 111.5 of 135 tiles in all), and it still
+meets 125 MHz (WNS +0.028 ns, WHS +0.023 ns). Closing it took two
+registers: the decision on a message's first byte compares its number with
+L a cycle ahead (both are settled at least two bytes earlier, during the
+block length), and the "most parked at once" statistic follows the
+registered count a cycle late. The tests in `tests/hw/test_recovery.ml`
+send random feeds on two lines that each lose 10 to 20% of packets, with
+packets out of order and a retransmission server that answers always, half
+the time, or never; the output is always in sequence, every body intact,
+and messages out plus lost equals the session. `tests/hw/test_board.ml` does
+the same through the whole board, the server answering the requests seen
+on the transmit pins: the change count, hash and orders equal the model's
+over every message.

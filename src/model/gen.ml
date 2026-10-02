@@ -86,7 +86,9 @@ let random_messages =
    references 1..40, unique only within itself, so batch [index] gets its
    own range (a live reference added again is outside ITCH's rules, and the
    hardware and reference books may treat it differently), and ends by
-   deleting all of its orders, so every batch starts from empty books. *)
+   deleting all of its orders, so every batch starts from empty books. Each
+   delete carries its order's locate, as on a real feed: the books disagree
+   on a delete that names another stock. *)
 let batch ~index messages =
   let by = 1000 * index in
   let shift (m : Itch.t) =
@@ -102,6 +104,18 @@ let batch ~index messages =
     in
     { m with body }
   in
-  List.map messages ~f:shift
-  @ List.concat_map [ 1; 2; 3 ] ~f:(fun loc -> List.init 60 ~f:(fun r -> delete ~loc (by + r + 1)))
+  let shifted = List.map messages ~f:shift in
+  (* each reference's locate when last added, in order of first addition *)
+  let locate = Hashtbl.create (module Int) and refs = Queue.create () in
+  List.iter shifted ~f:(fun (m : Itch.t) ->
+    let added r =
+      if not (Hashtbl.mem locate r) then Queue.enqueue refs r;
+      Hashtbl.set locate ~key:r ~data:m.header.locate
+    in
+    match m.body with
+    | Add_order a -> added a.order_ref
+    | Order_replace r -> added r.new_ref
+    | _ -> ());
+  shifted
+  @ List.map (Queue.to_list refs) ~f:(fun r -> delete ~loc:(Hashtbl.find_exn locate r) r)
 ;;

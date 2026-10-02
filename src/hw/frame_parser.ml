@@ -18,6 +18,11 @@
    input byte n + 42, two cycles later (an input and an output register). The UDP length (not the frame length)
    delimits the payload, which strips Ethernet padding.
 
+   [extra] endpoints (build-time constants: the B line of an A/B feed, the
+   address retransmissions are sent to) are accepted as well: each has its
+   own address checks, and a frame passes if all the shared checks and one
+   endpoint's do.
+
    Not checked, by design: IPv4 header and UDP checksums, and the Ethernet
    FCS, which only arrives after the payload has been forwarded. Frames with a
    MAC error are counted; see DESIGN.md for why a cut-through feed handler
@@ -69,7 +74,14 @@ let byte_of s k = select s ~high:(Signal.width s - 1 - (8 * k)) ~low:(Signal.wid
 
 let counter spec ~incr = reg_fb spec ~width:32 ~f:(fun c -> mux2 incr (c +:. 1) c)
 
-let create _scope (i : _ I.t) : _ O.t =
+(* An accepted destination, as constants: MAC (48 bits), IPv4, UDP port. *)
+type endpoint =
+  { mac : int
+  ; ip : int
+  ; port : int
+  }
+
+let create ?(extra : endpoint list = []) _scope (i : _ I.t) : _ O.t =
   let spec = Reg_spec.create ~clock:i.clock ~clear:i.clear () in
   (* Stage 0 registers the byte together with its offset in the frame
      (saturating), so that the comparisons below start from registers. *)
@@ -81,31 +93,50 @@ let create _scope (i : _ I.t) : _ O.t =
   let rx = Stream.Mac_rx.map i.rx ~f:(reg spec) in
   let idx = reg spec idx0 in
   let at k = idx ==:. k in
-  (* (offset, mask, expected) *)
+  (* (offset, mask, expected): the address checks of each endpoint, and the
+     checks every frame must pass *)
+  let address mac ip port =
+    List.init 6 ~f:(fun k -> k, 0xff, byte_of mac k)
+    @ List.init 4 ~f:(fun k -> 30 + k, 0xff, byte_of ip k)
+    @ List.init 2 ~f:(fun k -> 36 + k, 0xff, byte_of port k)
+  in
+  let endpoints =
+    address i.cfg.mac i.cfg.ip i.cfg.port
+    :: List.map extra ~f:(fun e ->
+      address
+        (of_unsigned_int ~width:48 e.mac)
+        (of_unsigned_int ~width:32 e.ip)
+        (of_unsigned_int ~width:16 e.port))
+  in
   let checks =
-    List.init 6 ~f:(fun k -> k, 0xff, byte_of i.cfg.mac k)
-    @ [ 12, 0xff, of_unsigned_int ~width:8 0x08
+    [ 12, 0xff, of_unsigned_int ~width:8 0x08
       ; 13, 0xff, of_unsigned_int ~width:8 0x00
       ; 14, 0xff, of_unsigned_int ~width:8 0x45
       ; 20, 0xbf, of_unsigned_int ~width:8 0x00 (* reserved, MF, offset[12:8] *)
       ; 21, 0xff, of_unsigned_int ~width:8 0x00
       ; 23, 0xff, of_unsigned_int ~width:8 17
       ]
-    @ List.init 4 ~f:(fun k -> 30 + k, 0xff, byte_of i.cfg.ip k)
-    @ List.init 2 ~f:(fun k -> 36 + k, 0xff, byte_of i.cfg.port k)
   in
   let len_hi = reg spec ~enable:(rx.valid &: at 38) rx.data in
   let udp_len = len_hi @: rx.data in
-  let mismatch =
+  let mismatch checks =
     List.map checks ~f:(fun (k, mask, expected) ->
       at k &: (rx.data &: of_unsigned_int ~width:8 mask <>: expected))
     |> List.reduce_exn ~f:( |: )
-    |: (at 39 &: (udp_len <:. 8))
   in
-  (* [ok]: every check so far passed (including this byte's) *)
-  let ok_reg = wire 1 in
-  let ok = mux2 rx.first vdd ok_reg &: ~:mismatch in
-  ok_reg <-- reg spec ~enable:rx.valid ok;
+  (* every check so far passed (including this byte's): one chain for the
+     shared checks, one per endpoint *)
+  let passing m =
+    let ok_reg = wire 1 in
+    let ok = mux2 rx.first vdd ok_reg &: ~:m in
+    ok_reg <-- reg spec ~enable:rx.valid ok;
+    ok
+  in
+  let shared_ok = passing (mismatch checks |: (at 39 &: (udp_len <:. 8))) in
+  let ok =
+    shared_ok
+    &: (List.map endpoints ~f:(fun e -> passing (mismatch e)) |> List.reduce_exn ~f:( |: ))
+  in
   (* payload bytes still expected *)
   let remaining_reg = wire 16 in
   let in_payload = ok &: (idx >=:. payload_offset) &: (remaining_reg <>:. 0) in
@@ -139,7 +170,7 @@ let create _scope (i : _ I.t) : _ O.t =
   { O.payload; counters }
 ;;
 
-let hierarchical scope =
+let hierarchical ?extra scope =
   let module H = Hierarchy.In_scope (I) (O) in
-  H.hierarchical ~scope ~name:"frame_parser" create
+  H.hierarchical ~scope ~name:"frame_parser" (create ?extra)
 ;;

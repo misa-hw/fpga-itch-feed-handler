@@ -48,7 +48,7 @@ flowchart LR
   subgraph RX["receive clock, 125 MHz: one byte per cycle"]
     CAP --> MAC["MAC<br/>preamble, FCS"]
     MAC --> NET["Ethernet, IPv4, UDP<br/>address filter"]
-    NET --> MOLD["MoldUDP64<br/>sequence, duplicates, gaps"]
+    NET --> MOLD["MoldUDP64<br/>A/B arbitration, gap recovery"]
     MOLD --> ITCH["ITCH 5.0 decoder"]
     ITCH --> SYM["symbol map<br/>8 slots"]
     SYM --> FIFO["command FIFO"]
@@ -60,6 +60,7 @@ flowchart LR
     EV --> RULE["trading rule<br/>buy when the ask reaches a limit"]
     RULE --> OUCH["OUCH 5.0 Enter Order<br/>in a UDP frame"]
     OUCH --> TXMAC["transmit MAC<br/>preamble, FCS"]
+    MOLD -->|"re-requests"| TXMAC
   end
   TXMAC -->|"GMII out, GTX_CLK forwarded"| PHY
   subgraph SLOW["50 MHz"]
@@ -105,13 +106,17 @@ Five layers, each checked against the one above
    waveform expect tests. The order book is compared with the architectural
    model on random sequences with tiny tables and several command spacings,
    including its internal counters. Real frames go through the GMII MAC at
-   the minimum inter-frame gap.
+   the minimum inter-frame gap. Gap recovery gets two lines that each lose
+   10 to 20% of packets, reordered packets and a retransmission server that
+   answers always, half the time or never, alone and through the whole
+   board: the output is always in sequence, and with answers, complete.
 4. **Full pipeline** (`bin/verify.ml`, Verilator): every frame of the
    tracked pcap at exact 1 Gb/s line rate. Every book event is compared with
    the reference by MoldUDP64 sequence number, and latency is measured per
    message.
-5. **Board** (`scripts/board_linerate.sh`): the pcap over a cable, compared
-   through an on-chip count and CRC-32 of every change.
+5. **Board** (`scripts/board_recovery.sh`, `scripts/board_linerate.sh`):
+   the pcap over a cable, compared through an on-chip count and CRC-32 of
+   every change.
 
 The data is a 32.6-million-message prefix of Nasdaq's public
 [07302019 ITCH 5.0 sample](https://emi.nasdaq.com/ITCH/Nasdaq%20ITCH/),
@@ -126,7 +131,7 @@ MoldUDP64 packets (`build/tracked.pcap`).
 | Book FIFO peak | 25 / 512 commands |
 | Background cache refills | 4,903; commands waited 10,902 cycles in total |
 | Core at 125 MHz, Vivado ([`timing.txt`](results/timing.txt)) | met, WNS +0.095 ns; 14,543 LUTs (23%), 8,983 FFs (7%), 98 BRAM tiles (73%) |
-| 1 Gb/s board image (with order entry), Vivado | met, WNS +0.075 ns, WHS +0.016 ns; GMII inputs +0.44 / +0.45 ns, outputs +1.65 / +3.69 ns setup / hold |
+| 1 Gb/s board image (order entry, gap recovery), Vivado | met, WNS +0.028 ns, WHS +0.023 ns; 20,992 LUTs (33%), 111.5 BRAM tiles (83%); GMII inputs +0.44 / +0.45 ns, outputs +1.65 / +3.69 ns setup / hold |
 | 1 Gb/s board, whole dataset over a cable | 1,043,727 changes, count and hash equal to the reference |
 | Orders on the board, whole dataset | 53 of 53 equal to the model's; tick-to-trade 112 ns pin to pin for every order |
 | Book latency on the board (every command) | p50 20, p99 31, p99.9 40 cycles, as in simulation |
@@ -247,11 +252,20 @@ SYNTH_OPTS=-retiming OPT_OPTS="-retarget -propconst -sweep" PLACE_DIRECTIVE=Extr
   PHYS_DIRECTIVE=AggressiveExplore ROUTE_DIRECTIVE=AggressiveExplore \
   ./fpga/vivado_build.sh fpga/build/board_top_gmii.v fpga/build/vivado_gmii 8   # 8: the receive clock period, ns
 cp fpga/build/vivado_gmii/board_top.bit fpga/build/board_top_gmii.bit
-PPS=60000 ./scripts/fpga_connect.sh   # program, replay the pcap, compare; omit PPS for top speed
-./scripts/fpga_disconnect.sh          # after unplugging: eno1 back to NetworkManager
+./scripts/fpga_connect.sh      # program; send lines A and B with losses; answer re-requests; compare
+./scripts/fpga_disconnect.sh   # after unplugging: eno1 back to NetworkManager
 ```
 
-`LIMIT=N` replays a prefix, and `scripts/board_sweep.sh` runs several rates.
+`fpga_connect.sh` runs `scripts/board_recovery.sh`: `pcapgen ab` builds the
+two lines (2% of packets lost on each, `DROP_A`/`DROP_B`), and
+`scripts/mold_server.py` (root, raw sockets) answers the board's
+re-requests with the recorded session. Whatever the lines, the host's
+sender and the retransmissions do, the board must end with the reference
+book's changes and orders over the whole session. `AB=0` sends the
+recorded feed on one line, `PPS=R` paces it, `LIMIT=N` replays a prefix.
+For an image without recovery, `TEST=linerate` runs
+`scripts/board_linerate.sh` (the model on what the host really sent;
+`scripts/board_sweep.sh` runs several rates).
 
 **100 Mb/s board test** (MII image, 400 packets through the host's UDP
 stack, every `E` line compared):
@@ -294,8 +308,10 @@ openFPGALoader-xpcu -c xilinxPlatformCableUsb fpga/build/board_top_50_selftest.b
 - **Sender:** the 1 Gb/s board test is limited by the PC, which averages
   about 100 Mb/s with tcpreplay and drops and reorders frames above about
   60,000 frames/s. Sustained 1 Gb/s traffic has only been simulated.
-- **Feed recovery:** there is no MoldUDP64 retransmission request or gap
-  recovery; duplicates and sequence gaps are counted.
+- **Feed recovery:** the board takes lines A and B and asks for what both
+  miss, but its buffer holds 1,024 messages (16 KB): a retransmission that
+  takes longer than the buffer lasts at the feed's rate costs more
+  requests, or messages given up (counted, and flagged as stale).
 - **Orders:** the rule is a demonstration, not a strategy: one symbol, one
   limit, no position or risk limits. OUCH 5.0 messages go out in UDP
   datagrams, while a real venue takes them over SoupBinTCP. Tick-to-trade

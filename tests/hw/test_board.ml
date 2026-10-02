@@ -75,11 +75,18 @@ let send_mii ?(corrupt = false) t frame =
   idle t 12
 ;;
 
-let create ?(mii_mode = false) ?order_rule () =
+let create ?(mii_mode = false) ?order_rule ?recovery () =
   let scope = Scope.create ~flatten_design:true () in
   let sim =
     Sim.create
-      (Board_top.create ~mii_mode ?order_rule ~bit_cycles ~second:20_000 ~phy_reset_cycles:8 scope)
+      (Board_top.create
+         ~mii_mode
+         ?order_rule
+         ?recovery
+         ~bit_cycles
+         ~second:20_000
+         ~phy_reset_cycles:8
+         scope)
   in
   let t =
     { sim
@@ -382,5 +389,190 @@ let%expect_test "board: orders out of the transmit pins" =
     frames at the pins equal the model's: true
     tick-to-trade at the pins, cycles: min 13 max 46
     UART: osent 27 ofast 21 odrop 0 tt 27 t50 13 tmax 46
+    |}]
+;;
+
+(* Gap recovery through the whole board: the feed on two lines (A, and B a
+   couple of packets behind), each losing packets of its own, and this
+   testbench as the retransmission server, answering the re-requests the
+   board sends out of its transmit pins. The board's count and hash of
+   every top-of-book change must be the reference book's over all the
+   messages, and its orders the model's. *)
+let%expect_test "board: gap recovery from the B line and retransmissions" =
+  let rule = { Ouch.Rule.slot = 0; symbol = "QQQ"; limit = 10_400; quantity = 100 } in
+  let recovery =
+    { Mold_parser.Recovery.window = 400
+    ; retry = 3000
+    ; max_retries = 6
+    ; max_request = 32
+    ; buffer_bytes = 4096
+    ; buffer_messages = 128
+    }
+  in
+  let t = create ~order_rule:rule ~recovery () in
+  let rand = Random.State.make [| 11 |] in
+  let messages =
+    List.concat
+      (List.init 4 ~f:(fun b ->
+         Quickcheck.random_value ~seed:(`Deterministic (sprintf "board recovery %d" b)) Gen.random_messages
+         |> Gen.batch ~index:b))
+    |> Array.of_list
+  in
+  let n = Array.length messages in
+  let session = "BOARDRECOV" in
+  let mold ~seq c =
+    Packet.Mold.to_string
+      { session
+      ; sequence = seq
+      ; messages = Array.sub messages ~pos:(seq - 1) ~len:c |> Array.to_list |> List.map ~f:Itch.to_string
+      ; end_of_session = false
+      }
+  in
+  let packets =
+    let rec go k acc =
+      if k >= n
+      then List.rev acc
+      else (
+        let c = Int.min (n - k) (1 + Random.State.int rand 4) in
+        go (k + c) ((k + 1, c) :: acc))
+    in
+    go 0 []
+  in
+  let keep () = Float.(Random.State.float rand 1.0 >= 0.12) in
+  let a = List.filter packets ~f:(fun _ -> keep ()) |> Array.of_list
+  and b = List.filter packets ~f:(fun _ -> keep ()) |> Array.of_list in
+  let skew = 2 in
+  let wire =
+    List.init (Int.max (Array.length a) (Array.length b) + skew) ~f:(fun k ->
+      (if k < Array.length a
+       then (
+         let seq, c = a.(k) in
+         [ Packet.frame Packet.default_endpoints (mold ~seq c) ])
+       else [])
+      @
+      if k >= skew && k - skew < Array.length b
+      then (
+        let seq, c = b.(k - skew) in
+        [ Packet.frame Packet.line_b_endpoints (mold ~seq c) ])
+      else [])
+    |> List.concat
+  in
+  let wire =
+    wire
+    @ [ Packet.frame
+          Packet.default_endpoints
+          (Packet.Mold.to_string { session; sequence = n + 1; messages = []; end_of_session = true })
+      ]
+  in
+  (* the board's transmit pins: order frames, and requests to answer *)
+  let tx = Buffer.create 256 and prev_en = ref false in
+  let orders = Queue.create () and requests = ref 0 and answers = Queue.create () in
+  let watch () =
+    let en = Bits.to_bool !(t.o.e_txen) in
+    if en then Buffer.add_char tx (Char.of_int_exn (Bits.to_int_trunc !(t.o.e_txd)));
+    if (not en) && !prev_en
+    then (
+      let w = Buffer.contents tx in
+      Buffer.clear tx;
+      let pre = String.take_while w ~f:(Char.equal '\x55') in
+      let rest = String.drop_prefix w (String.length pre) in
+      if String.is_prefix rest ~prefix:"\xd5"
+      then (
+        let f = String.drop_suffix (String.drop_prefix rest 1) 4 (* FCS *) in
+        let port = Itch.be f ~pos:36 ~len:2 in
+        if port = Packet.request_endpoints.dst_port
+        then (
+          incr requests;
+          let seq = Itch.be f ~pos:(42 + 10) ~len:8
+          and count = Itch.be f ~pos:(42 + 18) ~len:2 in
+          assert (String.equal (String.sub f ~pos:42 ~len:10) session);
+          (* answered 300 cycles later, up to 4 messages a packet *)
+          let rec go k =
+            if k < seq + count && k <= n
+            then (
+              let c = Int.min 4 (Int.min (seq + count - k) (n + 1 - k)) in
+              Queue.enqueue answers (t.cycle + 300, Packet.frame Packet.retransmission_endpoints (mold ~seq:k c));
+              go (k + c))
+          in
+          go seq)
+        else Queue.enqueue orders f));
+    prev_en := en
+  in
+  let send frame =
+    String.iter (wire_frame frame) ~f:(fun c ->
+      t.i.e_rxdv := Bits.vdd;
+      t.i.e_rxd := Bits.of_int_trunc ~width:8 (Char.to_int c);
+      cycle t;
+      watch ());
+    t.i.e_rxdv := Bits.gnd;
+    for _ = 1 to 12 do
+      cycle t;
+      watch ()
+    done
+  in
+  let send_answers () =
+    while (not (Queue.is_empty answers)) && fst (Queue.peek_exn answers) <= t.cycle do
+      send (snd (Queue.dequeue_exn answers))
+    done
+  in
+  List.iter wire ~f:(fun f ->
+    send_answers ();
+    send f);
+  for _ = 1 to 300_000 do
+    send_answers ();
+    cycle t;
+    watch ()
+  done;
+  (* the model, over every message in order *)
+  let book = Book.create Timing_top.default_symbols in
+  let strategy = Ouch.Strategy.create rule in
+  let hash = ref 0 and changes = ref 0 and want_orders = Queue.create () in
+  Array.iteri messages ~f:(fun k m ->
+    let seq = k + 1 in
+    Option.iter (Book.apply book m) ~f:(fun tob ->
+      incr changes;
+      hash := Crc32_sw.hash_tob_event !hash ~seq tob;
+      Option.iter (Ouch.Strategy.on_tob strategy ~seq tob) ~f:(fun o ->
+        Queue.enqueue
+          want_orders
+          (Packet.frame ~udp_checksum:false Packet.order_endpoints (Ouch.enter_order_to_string o)))));
+  let lines = String.split_lines (Buffer.contents t.text) in
+  let status =
+    List.filter lines ~f:(fun line ->
+      String.is_prefix line ~prefix:"S" && Option.is_some (status_field line "tmax"))
+    |> List.last_exn
+  in
+  let f name = Int.of_string ("0x" ^ Option.value_exn (status_field status name)) in
+  printf
+    "%d messages; dropped on A %d, on B %d\n"
+    n
+    (List.length packets - Array.length a)
+    (List.length packets - Array.length b);
+  printf
+    "board: changes %d hash %08x; model: changes %d hash %08x; equal: %b\n"
+    (f "chg")
+    (f "hash")
+    !changes
+    !hash
+    (f "chg" = !changes && f "hash" = !hash);
+  printf
+    "recovery: requests %d (seen on the pins %d), replayed %d, duplicates %d, gaps %d, lost %d, stale %d\n"
+    (f "rqs")
+    !requests
+    (f "rpl")
+    (f "dup")
+    (f "gap")
+    (f "mlost")
+    (f "stl");
+  printf
+    "orders: board %d, model %d, equal: %b\n"
+    (Queue.length orders)
+    (Queue.length want_orders)
+    ([%equal: string list] (Queue.to_list orders) (Queue.to_list want_orders));
+  [%expect {|
+    852 messages; dropped on A 42, on B 45
+    board: changes 352 hash c0c51c60; model: changes 352 hash c0c51c60; equal: true
+    recovery: requests 30 (seen on the pins 30), replayed 315, duplicates 718, gaps 39, lost 0, stale 0
+    orders: board 17, model 17, equal: true
     |}]
 ;;

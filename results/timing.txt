@@ -71,3 +71,15 @@ opt_design without BRAM power gating (OPT_OPTS="-retarget -propconst -sweep").
   Utilization: 19,708 LUTs (31.1%), 105 BRAM tiles (77.8%)
   Full Verilator replay: same events and hash; refill timing changes (see
   results/verify_tracked.txt).
+
+Gap recovery (2026-10-02): 1 Gb/s board image with MoldUDP64 A/B arbitration,
+re-requests and the replay buffer (Mold_parser.Recovery.default: 16 KB of
+bodies, 1,024 messages), same flow and options as above.
+  WNS +0.028 ns, WHS +0.023 ns, 0 failing endpoints: MET
+  endpoints within 0.1 / 0.2 / 0.5 / 1.0 ns of setup: 11 / 39 / 364 / 2,724
+  First builds: -0.511 ns (a 64-bit sequence compare, the room check and the
+  parking write enables in one cycle), then -0.200 ns (the buffer-peak
+  statistic behind the parking decision and an adder); both registered.
+  GMII inputs +0.444 / +0.450 ns, outputs +1.654 / +3.688 ns (setup / hold)
+  Utilization: 20,992 LUTs (33.1%), 16,355 registers (12.9%),
+               111.5 BRAM tiles (82.6%); recovery adds 1,284 LUTs, 6.5 tiles

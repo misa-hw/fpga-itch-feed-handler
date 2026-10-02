@@ -156,6 +156,7 @@ let create
   ?(selftest_on_clk50 = false)
   ?gmii_idelay_taps
   ?order_rule
+  ?recovery
   scope
   (i : _ I.t)
   : _ O.t
@@ -199,7 +200,19 @@ let create
       | Some frames ->
         selftest_player ~clock:rxc ~clear:clear_rx ~frames ~delay:selftest_delay ~gap:100
     in
-    Feed_handler.create scope { clock = rxc; clear = clear_rx; cfg = Timing_top.config (); rx }
+    (* gap recovery: the B line and the retransmissions are accepted too *)
+    let extra =
+      Option.map recovery ~f:(fun _ ->
+        List.map
+          [ Net.Packet.line_b_endpoints; Net.Packet.retransmission_endpoints ]
+          ~f:(fun (e : Net.Packet.endpoints) ->
+            { Frame_parser.mac = Net.Packet.Mac.to_int e.dst_mac; ip = e.dst_ip; port = e.dst_port }))
+    in
+    Feed_handler.create
+      ?extra
+      ?recovery
+      scope
+      { clock = rxc; clear = clear_rx; cfg = Timing_top.config (); rx }
   in
   let ev = fh.event in
   (* latency of every book command, from its message's last byte on the MAC
@@ -221,6 +234,7 @@ let create
       Order_entry.create
         ~rule
         ~t2t_offset:(8 + if Option.is_some captured then 1 else 0)
+        ?request:(Option.map recovery ~f:(fun _ -> fh.request))
         ~fast:
           ( fh.msg
           , fh.slot_locates.(rule.slot)
@@ -271,7 +285,21 @@ let create
     ; "msg", c.mold.messages
     ; "gap", c.mold.gaps
     ; "dup", c.mold.duplicates
-    ; "cmd", c.book.processed
+    ]
+    @ (match recovery with
+       | None -> []
+       | Some _ ->
+         (* gap recovery: replayed from the buffer, requests sent, messages
+            given up (mlost; "lost" is UART lines),
+            dropped by a full buffer, most parked at once, stale flag *)
+         [ "rpl", c.mold.replayed
+         ; "rqs", c.mold.requests
+         ; "mlost", c.mold.lost
+         ; "bovf", c.mold.overflows
+         ; "bpk", uresize c.mold.buffer_peak ~width:16
+         ; "stl", uresize c.mold.stale ~width:4
+         ])
+    @ [ "cmd", c.book.processed
     ; "chg", ev_count
     ; "hash", ev_hash
     ; "lost", lost
