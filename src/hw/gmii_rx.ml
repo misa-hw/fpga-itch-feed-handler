@@ -5,14 +5,17 @@
    7 x 0x55 preamble, 0xD5 SFD, the frame, and a 4-byte FCS.
 
    - The preamble and SFD are stripped.
-   - The FCS is stripped by delaying the stream by 4 bytes plus one: a byte
-     is released when a later byte proves it is not part of the FCS, and the
-     last frame byte is released, marked [last], when RX_DV falls.
+   - The FCS is passed on as the frame's last 4 bytes: the frame parser
+     delimits the payload by the UDP length, so to it they are padding.
+     Stripping it meant holding every byte back until 4 later ones proved
+     it was not FCS: 4 cycles on every byte, tick-to-trade included.
+   - Each byte is held one cycle, until the next byte or RX_DV falling says
+     whether it is the frame's last, marked [last].
    - The CRC-32 over frame + FCS must leave the standard residue; [err] (with
      [last]) reports a bad FCS, an RX_ER, or a frame under 64 bytes.
 
-   Latency: 5 bytes (the FCS window) + 1 register. The frame parser acts on
-   each byte as it is released, cut-through. *)
+   Latency: 1 byte + 1 register. The frame parser acts on each byte as it
+   is released, cut-through. *)
 
 open! Core
 open! Hardcaml
@@ -68,8 +71,8 @@ let create ?(mii_mode = false) _scope (i : _ I.t) : _ O.t =
     else i.rxd, i.rx_dv, i.rx_er, [], gnd
   in
   let in_frame = Variable.reg spec ~width:1 in
-  let fill = Variable.reg spec ~width:3 in
-  let d = Array.init 5 ~f:(fun _ -> Variable.reg spec ~width:8) in
+  let held = Variable.reg spec ~width:1 (* [d] holds a byte to release *) in
+  let d = Variable.reg spec ~width:8 in
   let crc = Variable.reg spec ~width:32 in
   let len = Variable.reg spec ~width:11 in
   let er = Variable.reg spec ~width:1 in
@@ -77,9 +80,6 @@ let create ?(mii_mode = false) _scope (i : _ I.t) : _ O.t =
   let out = Stream.Mac_rx.Of_always.reg spec in
   let crc_errors = Variable.reg spec ~width:32 in
   let crc_next = Crc32.next ~crc:crc.value ~data:rx_byte in
-  let shift_in =
-    [ d.(0) <-- rx_byte ] @ List.init 4 ~f:(fun k -> d.(k + 1) <-- d.(k).value)
-  in
   let bad_now =
     er.value |: odd_nibble |: (crc.value <>:. Crc32.residue) |: (len.value <:. 64)
   in
@@ -99,21 +99,21 @@ let create ?(mii_mode = false) _scope (i : _ I.t) : _ O.t =
               crc <-- crc_next
             ; when_ (len.value <>:. 2047) [ len <-- len.value +:. 1 ]
             ; when_ byte_error [ er <-- vdd ]
-            ; if_
-                (fill.value ==:. 5)
+            ; when_
+                held.value
                 [ out.valid <-- vdd
-                ; out.data <-- d.(4).value
+                ; out.data <-- d.value
                 ; out.first <-- ~:(emitted_any.value)
                 ; emitted_any <-- vdd
                 ]
-                [ fill <-- fill.value +:. 1 ]
-            ; proc shift_in
+            ; held <-- vdd
+            ; d <-- rx_byte
             ]
             [ (* preamble: wait for the SFD *)
               when_
                 (rx_byte ==:. 0xd5)
                 [ in_frame <-- vdd
-                ; fill <--. 0
+                ; held <-- gnd
                 ; crc <--. Crc32.init
                 ; len <--. 0
                 ; er <-- byte_error
@@ -122,14 +122,14 @@ let create ?(mii_mode = false) _scope (i : _ I.t) : _ O.t =
             ]
             ]
         ]
-        [ (* RX_DV low: end of frame; release the last non-FCS byte *)
+        [ (* RX_DV low: end of frame; release its last byte *)
           when_
             in_frame.value
             [ in_frame <-- gnd
             ; when_
-                (fill.value ==:. 5)
+                held.value
                 [ out.valid <-- vdd
-                ; out.data <-- d.(4).value
+                ; out.data <-- d.value
                 ; out.first <-- ~:(emitted_any.value)
                 ; out.last <-- vdd
                 ; out.err <-- bad_now

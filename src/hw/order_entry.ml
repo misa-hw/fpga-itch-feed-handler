@@ -88,9 +88,10 @@ let create
   let tx_busy = wire 1
   and tx_holding = wire 1
   and queue_empty = wire 1 in
-  let fast_fire, fast_entry, prestart, cancel =
+  let can_bypass = wire 1 in
+  let fast_fire, fast_entry, prestart, cancel, late_patch, fast_data =
     match fast with
-    | None -> gnd, zero 1, gnd, gnd
+    | None -> gnd, zero 1, gnd, gnd, gnd, zero 8
     | Some ((m : Signal.t Stream.Message.t), locate, mapped, book_quiet) ->
       let count = wire 6 in
       let pos = mux2 m.first (zero 6) count in
@@ -116,16 +117,37 @@ let create
       let price_live = concat_msb [ p32; p33; p34; d ] in
       let price_kept = keep 35 price_live in
       let price = mux2 (at 35) price_live price_kept in
+      (* "price at or below the limit", one byte at a time (big endian): a
+         byte comparison with a constant per cycle, and the answer is often
+         known before the last byte (below, [early]) *)
+      let lb k = (rule.limit lsr (8 * (3 - k))) land 0xff in
+      let lt1 = keep 32 (d <:. lb 0)
+      and eq1 = keep 32 (d ==:. lb 0) in
+      let lt2 = keep 33 (lt1 |: (eq1 &: (d <:. lb 1)))
+      and eq2 = keep 33 (eq1 &: (d ==:. lb 1)) in
+      let lt3_now = lt2 |: (eq2 &: (d <:. lb 2))
+      and eq3_now = eq2 &: (d ==:. lb 2) in
+      let lt3 = keep 34 lt3_now
+      and eq3 = keep 34 eq3_now in
+      let le_now = lt3 |: (eq3 &: (d <=:. lb 3)) in
+      let le = keep 35 le_now in
       let ready = book_quiet &: ~:(event.valid) &: ~:seen_low in
       let candidate = (is_a |: is_f) &: ours &: sell in
+      (* Early: an Add whose first three price bytes are already below the
+         limit's fires on its third price byte, a cycle before its last;
+         the price's last byte goes into the frame as it arrives (Gmii_tx's
+         late byte). Only straight to the transmit MAC: a queued order
+         would need its price whole. *)
+      let early = at 34 &: is_a &: candidate &: shares_seen &: lt3_now &: ready &: can_bypass in
+      let fired_early = reg_fb spec ~width:1 ~f:(fun e -> mux2 early vdd (mux2 (m.valid &: m.last) gnd e)) in
       let fire =
-        m.valid
-        &: m.last
-        &: ((is_a &: (pos ==:. 35)) |: (is_f &: (pos ==:. 39)))
-        &: candidate
-        &: shares_seen
-        &: (price <=:. rule.limit)
-        &: ready
+        early
+        |: (m.valid
+            &: m.last
+            &: ((is_a &: (pos ==:. 35) &: le_now &: ~:fired_early) |: (is_f &: (pos ==:. 39) &: le))
+            &: candidate
+            &: shares_seen
+            &: ready)
       in
       let prestart = at 23 &: candidate &: shares_nz_now &: ready &: ~:tx_busy &: queue_empty in
       (* cancel a pre-formed preamble when its message ends without an order
@@ -135,17 +157,26 @@ let create
       let cancel = tx_holding &: ~:fire &: ((pending &: m.valid &: m.last) |: msb held) in
       ( fire
       , concat_msb
-          [ price
+          [ mux2 early (concat_msb [ p32; p33; d; zero 8 ]) price
           ; sel_bottom m.seq ~width:seq_bits
-          ; now -:. Feed_handler.message_offset (* its message's last byte on the MAC stream *)
+          ; (* its message's last byte on the MAC stream (for [early], the
+               next cycle) *)
+            mux2 early (now -:. (Feed_handler.message_offset - 1)) (now -:. Feed_handler.message_offset)
           ]
       , prestart
-      , cancel )
+      , cancel
+      , fired_early &: at 35 (* the early order's last price byte arrives *)
+      , d )
   in
   assign seen_low (reg_fb spec ~width:1 ~f:(fun l -> mux2 fast_fire vdd (mux2 ours low l)));
   (* ---- queue ---- *)
   let start = wire 1
   and full = wire 1 in
+  (* A fast-path order with nothing queued goes straight to the transmit
+     MAC in the cycle it is decided (a cycle sooner than through the
+     queue); anything else is queued. *)
+  let bypass = fast_fire &: can_bypass in
+  let entry_width = 32 + seq_bits + 32 in
   let queue =
     Fifo.create
       ~showahead:true
@@ -154,21 +185,22 @@ let create
       ~capacity:queue_capacity
       ~clock
       ~clear
-      ~wr:((fire |: fast_fire) &: ~:full)
+      ~wr:((fire |: fast_fire) &: ~:bypass &: ~:full)
       ~d:
         (mux2
            fast_fire
-           (uresize fast_entry ~width:(32 + seq_bits + 32))
+           (uresize fast_entry ~width:entry_width)
            (concat_msb [ event.ask_price; sel_bottom event.seq ~width:seq_bits; message_time ]))
       ~rd:start
   in
   assign full queue.full;
   assign queue_empty queue.empty;
-  let dropped = reg_fb spec ~width:32 ~f:(fun d -> mux2 ((fire |: fast_fire) &: full) (d +:. 1) d) in
+  let dropped = reg_fb spec ~width:32 ~f:(fun d -> mux2 ((fire |: fast_fire) &: ~:bypass &: full) (d +:. 1) d) in
   let fast_orders = reg_fb spec ~width:32 ~f:(fun n -> mux2 (fast_fire &: ~:full) (n +:. 1) n) in
-  let q_price = select queue.q ~high:(Signal.width queue.q - 1) ~low:(seq_bits + 32) in
-  let q_seq = select queue.q ~high:(seq_bits + 31) ~low:32 in
-  let q_time = sel_bottom queue.q ~width:32 in
+  let src = mux2 bypass (uresize fast_entry ~width:entry_width) queue.q in
+  let q_price = select src ~high:(entry_width - 1) ~low:(seq_bits + 32) in
+  let q_seq = select src ~high:(seq_bits + 31) ~low:32 in
+  let q_time = sel_bottom src ~width:32 in
   (* ---- frame ---- *)
   let orders = reg_fb spec ~width:32 ~f:(fun n -> mux2 start (n +:. 1) n) in
   let header =
@@ -195,6 +227,7 @@ let create
       ]
   in
   assert (List.length enter_order = Itch_model.Ouch.enter_order_len);
+  let price_offset = 1 + 4 + 1 + 4 + 8 (* the 8-byte price, within the Enter Order *) in
   let order_frame = concat_lsb (const_bytes header @ enter_order) in
   (* MoldUDP64 re-requests (gap recovery) share the transmit MAC: one
      pending request, replaced by a newer one; it goes out only when no
@@ -232,14 +265,27 @@ let create
               rq.valid
               [ pending <-- vdd; r_session <-- rq.session; r_seq <-- rq.seq; r_count <-- rq.count ]
           ]);
-      assign go (pending.value &: queue.empty &: ~:(tx_busy) &: ~:prestart);
+      assign go (pending.value &: queue.empty &: ~:(tx_busy) &: ~:prestart &: ~:fast_fire);
       go, frame, reg_fb spec ~width:32 ~f:(fun n -> mux2 go (n +:. 1) n)
   in
   let frame = mux2 rq_start rq_frame order_frame in
-  let tx = Gmii_tx.create ~prestart ~cancel ~spec ~start:(start |: rq_start) ~frame () in
+  (* the price's last byte, sent late: set with the frame (zero in a
+     request's padding), and for an [early] order replaced as it arrives *)
+  let late_index = Net.Packet.payload_offset + price_offset + 7 in
+  let late_value =
+    reg_fb spec ~width:8 ~f:(fun v ->
+      mux2
+        late_patch
+        fast_data
+        (mux2 start (sel_bottom q_price ~width:8) (mux2 rq_start (zero 8) v)))
+  in
+  let tx =
+    Gmii_tx.create ~prestart ~cancel ~late:(late_index, late_value) ~spec ~start:(start |: rq_start) ~frame ()
+  in
   assign tx_busy tx.busy;
   assign tx_holding tx.holding;
-  assign start (~:(queue.empty) &: (~:(tx.busy) |: tx.holding));
+  assign can_bypass (queue.empty &: (~:(tx.busy) |: tx.holding));
+  assign start (bypass |: (~:(queue.empty) &: (~:(tx.busy) |: tx.holding)));
   (* ---- tick-to-trade ---- *)
   let t_start = reg spec ~enable:start q_time in
   (* the frame going out is an order (not a request): it alone is timed *)

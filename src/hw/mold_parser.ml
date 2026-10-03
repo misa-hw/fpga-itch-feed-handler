@@ -156,7 +156,21 @@ let create ?recovery scope (i : _ I.t) : _ O.t =
   let cnt_dups = Variable.reg spec ~width:32 in
   let cnt_gaps = Variable.reg spec ~width:32 in
   let cnt_malformed = Variable.reg spec ~width:32 in
-  let incr (v : Variable.t) = v <-- v.value +:. 1 in
+  (* Counters count a cycle late, from a registered pulse: they are
+     statistics, and their enables, behind the message decisions, were the
+     image's critical path. *)
+  let pulses = ref [] in
+  let incr (v : Variable.t) =
+    let pulse =
+      match List.Assoc.find !pulses v ~equal:phys_equal with
+      | Some p -> p
+      | None ->
+        let p = Variable.wire ~default:gnd () in
+        pulses := (v, p) :: !pulses;
+        p
+    in
+    pulse <-- vdd
+  in
   (* the phase and header index this byte belongs to *)
   let cur_phase = mux2 p.first (of_unsigned_int ~width:3 header) phase.value in
   let cur_hidx = mux2 p.first (zero 5) hidx.value in
@@ -486,6 +500,9 @@ let create ?recovery scope (i : _ I.t) : _ O.t =
     ; seq = s
     }
   in
+  compile
+    (List.map !pulses ~f:(fun ((v : Variable.t), (p : Variable.t)) ->
+       when_ (reg spec p.value) [ v <-- v.value +:. 1 ]));
   let msg =
     (match replay_out with
      | None -> live_msg

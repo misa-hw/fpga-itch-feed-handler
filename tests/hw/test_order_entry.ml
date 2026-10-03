@@ -216,9 +216,9 @@ let%expect_test "orders equal the model's, byte for byte; tick-to-trade per orde
     orders: model 41, hardware 41 (fast path 32, dropped 0)
     frames equal the model's: true
     cancelled pre-formed preambles: 24
-    preamble bytes: 7,13
+    preamble bytes: 7,11,12
     tick-to-trade samples equal the definition: true
-    tick-to-trade, cycles: min 5 median 5 max 38
-    hardware histogram: count 41 p50 5 max 38
+    tick-to-trade, cycles: min 3 median 4 max 38
+    hardware histogram: count 41 p50 4 max 38
     |}]
 ;;

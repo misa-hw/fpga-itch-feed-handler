@@ -522,21 +522,38 @@ of the triggering message is on the GMII receive pins to the cycle the
 order frame's first byte is on the transmit pins, into the same hardware
 histogram as the book latency. In simulation of the whole board
 (`tests/hw/test_board.ml`), the board's own figure equals the one measured
-at the pins: 13 cycles (104 ns) for the 21 of 27 orders decided from the
-message, up to 46 for those that need the book. Of the 13:
+at the pins: 7 or 8 cycles (56 or 64 ns) for the 21 of 27 orders decided
+from the message, up to 42 for those that need the book. Of the 8:
 
 | stage | cycles |
 |---|---|
-| receive pins to the MAC's output stream: input register, and the MAC holding back 4 bytes until it knows they are not the FCS | 7 |
+| receive pins to the MAC's output stream: input register, the MAC's one-byte hold (to mark a frame's last byte), output register | 3 |
 | MAC stream to the MoldUDP64 message stream | 2 |
-| last byte to the order frame's first byte at the transmit MAC: decide (price compared as its last byte arrives), queue, SFD on the held preamble, first byte | 3 |
+| last byte to the order frame's first byte at the transmit MAC: decide and start the MAC in the same cycle, SFD on the held preamble, first byte | 2 |
 | through the IOB output register to the pin | 1 |
 
-Orders that need the book took 35 to 46 cycles at the pins in the same
+Three changes took this from 13 cycles:
+- **The receive MAC passes the FCS on** (-4). It used to hold every byte
+  back until 4 later bytes proved it was not FCS. The frame parser takes
+  the payload by the UDP length, so the FCS is just more padding to it,
+  and the MAC now holds a byte one cycle only, to know whether it is the
+  frame's last. This shortens the book path too.
+- **A decided order skips the queue** (-1) when nothing is queued: it
+  starts the transmit MAC in the cycle it is decided.
+- **The price is compared a byte at a time** (-1 when it applies). Big
+  endian, the first three bytes usually settle "at or below the limit"
+  (unless the price is within 256 units, 2.56 cents, of the limit). An Add
+  then fires on its third price byte, a cycle before its last, and the
+  price's last byte goes into the frame as it arrives: the transmit MAC
+  sends that one byte from a register, and it is not due until about 20
+  bytes into the frame. Only Adds, whose last byte is the price's: an
+  order never leaves before its trigger has arrived in full.
+
+Orders that need the book took 34 to 42 cycles at the pins in the same
 run: the book's 17 or more cycles, and a full 8-byte preamble once the
-event arrives. The gigabit image's input capture adds one more cycle (its BUFIO
-input register feeds a falling-edge and then a rising-edge register): 14
-cycles, 112 ns.
+event arrives. The gigabit image's input capture adds one more cycle (its
+BUFIO input register feeds a falling-edge and then a rising-edge register):
+8 or 9 cycles, 64 or 72 ns.
 
 **On the board** (`results/board_gigabit.txt`), over the whole dataset at
 60,000 frames/s: all 53 orders equal to the model's, and every one took

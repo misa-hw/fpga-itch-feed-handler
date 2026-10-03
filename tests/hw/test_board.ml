@@ -387,8 +387,8 @@ let%expect_test "board: orders out of the transmit pins" =
   [%expect {|
     orders: model 27, pins 27; cancelled pre-formed preambles 16
     frames at the pins equal the model's: true
-    tick-to-trade at the pins, cycles: min 13 max 46
-    UART: osent 27 ofast 21 odrop 0 tt 27 t50 13 tmax 46
+    tick-to-trade at the pins, cycles: min 7 max 42
+    UART: osent 27 ofast 21 odrop 0 tt 27 t50 8 tmax 42
     |}]
 ;;
 

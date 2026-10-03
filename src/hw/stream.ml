@@ -17,7 +17,8 @@ module Bytes_in = struct
   [@@deriving hardcaml]
 end
 
-(* What an RX MAC delivers: preamble/SFD and FCS already stripped. [err] is
+(* What an RX MAC delivers: the frame after the SFD, its 4-byte FCS
+   included (the frame parser takes the payload by the UDP length). [err] is
    valid with [last] and flags a bad FCS or a PHY receive error. *)
 module Mac_rx = struct
   type 'a t =

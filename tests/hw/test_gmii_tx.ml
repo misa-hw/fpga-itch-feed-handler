@@ -105,7 +105,8 @@ let%expect_test "wire bytes, inter-frame gap, and loopback into the receive MAC"
       Buffer.add_char received (Char.of_int_exn (Bits.to_int_trunc !(r.data)));
       if Bits.to_bool !(r.last)
       then (
-        Queue.enqueue frames_rx (Buffer.contents received, Bits.to_bool !(r.err));
+        (* the receive MAC passes the FCS on as the last 4 bytes *)
+        Queue.enqueue frames_rx (String.drop_suffix (Buffer.contents received) 4, Bits.to_bool !(r.err));
         Buffer.clear received))
   in
   (* each frame starts as soon as the MAC is idle again *)
@@ -168,7 +169,7 @@ let%expect_test "pre-formed preamble: held, then the frame; or cancelled before 
       Buffer.add_char rx (Char.of_int_exn (Bits.to_int_trunc !(o.rx.data)));
       if Bits.to_bool !(o.rx.last)
       then (
-        Queue.enqueue received (Buffer.contents rx);
+        Queue.enqueue received (String.drop_suffix (Buffer.contents rx) 4 (* FCS *));
         Buffer.clear rx))
   in
   let pulse r =

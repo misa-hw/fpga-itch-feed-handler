@@ -15,7 +15,12 @@
    already on the wire starts 8 bytes sooner. [cancel] while holding ends
    the burst before any SFD, which no receiver takes for a frame, and keeps
    the gap. [first] is high in the cycle the frame's first byte is on TXD;
-   [sof] in the cycle TX_EN rises. *)
+   [sof] in the cycle TX_EN rises.
+
+   [late] = (index, value): frame byte [index] is sent from [value] instead
+   of the frame loaded at [start], so it may still change after the frame
+   has started (a price's last byte, for an order decided before it
+   arrived); the FCS covers the byte actually sent. *)
 
 open! Core
 open! Hardcaml
@@ -43,7 +48,7 @@ end
 let min_preamble = 7 (* bytes of 0x55 before the SFD 0xD5 *)
 let gap_bytes = 12
 
-let create ?(prestart = gnd) ?(cancel = gnd) ~spec ~start ~frame () =
+let create ?(prestart = gnd) ?(cancel = gnd) ?late ~spec ~start ~frame () =
   let open Always in
   let bytes = Signal.width frame / 8 in
   if bytes * 8 <> Signal.width frame || bytes < 60
@@ -59,7 +64,13 @@ let create ?(prestart = gnd) ?(cancel = gnd) ~spec ~start ~frame () =
   let txd = Variable.reg spec ~width:8 in
   let sof = Variable.reg spec ~width:1 in
   let first = Variable.reg spec ~width:1 in
-  let byte = sel_bottom sh.value ~width:8 in
+  let byte =
+    match late with
+    | None -> sel_bottom sh.value ~width:8
+    | Some (index, value) ->
+      if index < 0 || index >= bytes then raise_s [%message "Gmii_tx: late byte outside the frame" (index : int)];
+      mux2 (count.value ==:. index) value (sel_bottom sh.value ~width:8)
+  in
   let crc_next = Crc32.next ~crc:crc.value ~data:byte in
   let load = [ sh <-- frame; crc <--. Crc32.init; started <-- vdd ] in
   let enough = sent.value ==:. min_preamble in

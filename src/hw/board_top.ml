@@ -225,15 +225,16 @@ let create
   in
   (* order entry: the trading rule, OUCH orders out through the PHY. The
      tick-to-trade is reported between the GMII pins: Order_entry measures it
-     between the MACs, and the pins add a fixed 8 cycles (input register,
-     the receive MAC's FCS delay, output register; measured in
-     tests/hw/test_board.ml), plus 1 for the gigabit capture, whose rising
-     edge register comes one cycle after its BUFIO input register. *)
+     between the MACs, and the pins add a fixed 4 cycles (input register,
+     the receive MAC's one-byte hold and register, output register;
+     measured in tests/hw/test_board.ml), plus 1 for the gigabit capture,
+     whose rising edge register comes one cycle after its BUFIO input
+     register. *)
   let orders =
     Option.map order_rule ~f:(fun rule ->
       Order_entry.create
         ~rule
-        ~t2t_offset:(8 + if Option.is_some captured then 1 else 0)
+        ~t2t_offset:(4 + if Option.is_some captured then 1 else 0)
         ?request:(Option.map recovery ~f:(fun _ -> fh.request))
         ~fast:
           ( fh.msg
