@@ -555,12 +555,17 @@ event arrives. The gigabit image's input capture adds one more cycle (its
 BUFIO input register feeds a falling-edge and then a rising-edge register):
 8 or 9 cycles, 64 or 72 ns.
 
-**On the board** (`results/board_gigabit.txt`), over the whole dataset at
-60,000 frames/s: all 53 orders equal to the model's, and every one took
-exactly 14 cycles, 112 ns, pin to pin. The previous image, which waited
-for the book for every order, measured 36 cycles median and 48 worst (288
-and 384 ns) on the same data. The PHY's own receive and transmit latency
-comes on top and is not measured here.
+**On the board** (`results/board_recovery.txt`), over the whole dataset
+with gap recovery at work: all 53 orders equal to the model's, and every
+one took exactly 9 cycles, 72 ns, pin to pin. None used the early decision:
+all 53 are priced exactly at the limit ($300.0000), and only a price more
+than 2.56 cents below it is settled by its first three bytes. Before these
+cuts, every order measured 14 cycles, 112 ns (`results/board_gigabit.txt`);
+an image that waited for the book for every order measured 36 cycles
+median and 48 worst (288 and 384 ns). Rarely, an order waits for a gap
+recovery request already on the wire (16 cycles once at the host's top
+speed). The PHY's own receive and transmit latency comes on top and is not
+measured here.
 
 ## 12. Gap recovery: A/B lines and retransmission
 

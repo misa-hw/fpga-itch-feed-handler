@@ -103,3 +103,22 @@ Image with a 32-request (32 ms) budget (commit a27e2c1):
   the board (943 lost after the host's tap, recovered by retries)
   request to answer leaving the host: p50 0.047 ms, p99 1.609, p99.9 5.305,
   max 9.373; 9 over 8 ms, all within the 32 ms budget
+
+Image with the tick-to-trade cuts (commit 14a0d47):
+
+9. 60,000 frames/s: PASS
+  S1 frm=0031df7a acc=0031dec5 flt=000000b5 err=00000000 fcs=00000000 msg=001abf72 gap=00007f26 dup=001a0fc4 rpl=00021486 rqs=00005a9d mlost=00000000 bovf=00000000 bpk=007c stl=0 cmd=001a8f98 chg=000fed0f hash=186f6e17 lost=000fbed5 kick=0003b6f1 rfl=000013ed ovf=00000000 ord=00006a14 lvl=00001d0a map=ff blen=00000000 dord=001a8f98 fcmd=001a8f98 fmax=00000002 uns=00000000 bst=01 bfe=1 clk=21ad082a lat=001a8f98 l50=0014 l99=001f l999=0028 lmax=000007f6 osent=00000035 ofast=00000035 odrop=00000000 tt=00000035 t50=0009 t99=0009 tmax=00000009
+  all 1,752,946 messages, hash 186f6e17, 53 of 53 orders, none given up;
+  tick-to-trade 9 cycles (72 ns) pin to pin for every order (14 before).
+  All 53 are priced exactly at the limit ($300.0000), so none can be
+  decided on the third price byte (that needs a price more than 2.56
+  cents below the limit): every order takes the 9-cycle path.
+
+10. Top speed, 130,395 frames/s: PASS
+  S1 frm=00335101 acc=003350a5 flt=0000005c err=00000000 fcs=00000000 msg=001abf72 gap=00019111 dup=00394bb9 rpl=00069257 rqs=00014521 mlost=00000000 bovf=00000401 bpk=0480 stl=0 cmd=001a8f98 chg=000fed0f hash=186f6e17 lost=000fd7ba kick=0003b6f1 rfl=00001382 ovf=00000000 ord=00006a14 lvl=00001d0a map=ff blen=00000000 dord=001a8f98 fcmd=001a8f98 fmax=0000000f uns=00000000 bst=01 bfe=1 clk=33022bf7 lat=001a8f98 l50=0014 l99=001f l999=0029 lmax=000007ff osent=00000035 ofast=00000035 odrop=00000000 tt=00000035 t50=0009 t99=0010 tmax=00000010
+  all 1,752,946 messages, hash 186f6e17, 53 of 53 orders, none given up;
+  102,673 gaps, 83,233 requests, 1,025 turned away by the full buffer and
+  recovered; answers: 118,325 sent, 117,890 received; request to answer
+  leaving the host p50 0.049 ms, p99.9 9.855, max 18.308 (143 over 8 ms,
+  all within the 32 ms budget). Tick-to-trade p50 9 cycles, max 16 (an
+  order waited for a re-request already on the wire).

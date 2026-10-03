@@ -3,37 +3,40 @@ serving 1752946 messages of session b'ITCH50SMPL' on eno1
 so far: 0 requests, 0 messages served in 0 frames, 0 frames dropped by the kernel
 so far: 0 requests, 0 messages served in 0 frames, 0 frames dropped by the kernel
 so far: 0 requests, 0 messages served in 0 frames, 0 frames dropped by the kernel
-so far: 3263 requests, 77940 messages served in 4630 frames, 0 frames dropped by the kernel
-so far: 6843 requests, 151520 messages served in 9323 frames, 0 frames dropped by the kernel
-so far: 10212 requests, 231025 messages served in 14009 frames, 0 frames dropped by the kernel
-so far: 13927 requests, 307290 messages served in 18901 frames, 0 frames dropped by the kernel
-so far: 17387 requests, 389899 messages served in 23692 frames, 0 frames dropped by the kernel
-so far: 20758 requests, 469818 messages served in 28363 frames, 0 frames dropped by the kernel
-so far: 24188 requests, 558427 messages served in 33317 frames, 0 frames dropped by the kernel
-so far: 27718 requests, 671967 messages served in 39014 frames, 0 frames dropped by the kernel
-so far: 31166 requests, 746341 messages served in 43664 frames, 0 frames dropped by the kernel
-so far: 34638 requests, 823984 messages served in 48430 frames, 0 frames dropped by the kernel
-so far: 37966 requests, 903013 messages served in 53011 frames, 0 frames dropped by the kernel
-so far: 41437 requests, 976858 messages served in 57668 frames, 0 frames dropped by the kernel
-so far: 45023 requests, 1068134 messages served in 62744 frames, 0 frames dropped by the kernel
-so far: 48395 requests, 1151812 messages served in 67494 frames, 0 frames dropped by the kernel
-so far: 51686 requests, 1237027 messages served in 72215 frames, 0 frames dropped by the kernel
-so far: 55107 requests, 1316924 messages served in 76949 frames, 0 frames dropped by the kernel
-so far: 58484 requests, 1389090 messages served in 81491 frames, 0 frames dropped by the kernel
-so far: 61957 requests, 1474249 messages served in 86375 frames, 0 frames dropped by the kernel
-so far: 65282 requests, 1548848 messages served in 90934 frames, 0 frames dropped by the kernel
-so far: 68799 requests, 1627978 messages served in 95694 frames, 0 frames dropped by the kernel
-so far: 72246 requests, 1712929 messages served in 100522 frames, 0 frames dropped by the kernel
-so far: 75684 requests, 1800921 messages served in 105448 frames, 0 frames dropped by the kernel
-so far: 78968 requests, 1872322 messages served in 109901 frames, 0 frames dropped by the kernel
-so far: 80647 requests, 1906460 messages served in 112142 frames, 0 frames dropped by the kernel
-so far: 80647 requests, 1906460 messages served in 112142 frames, 0 frames dropped by the kernel
-so far: 80647 requests, 1906460 messages served in 112142 frames, 0 frames dropped by the kernel
-so far: 80653 requests, 1908290 messages served in 112183 frames, 0 frames dropped by the kernel
-so far: 80653 requests, 1908290 messages served in 112183 frames, 0 frames dropped by the kernel
-so far: 80653 requests, 1908290 messages served in 112183 frames, 0 frames dropped by the kernel
-total: 80653 requests, 1908290 messages served in 112183 frames, 0 frames dropped by the kernel
+so far: 0 requests, 0 messages served in 0 frames, 0 frames dropped by the kernel
+so far: 1473 requests, 41790 messages served in 2309 frames, 0 frames dropped by the kernel
+so far: 4414 requests, 141654 messages served in 7007 frames, 0 frames dropped by the kernel
+so far: 7700 requests, 226824 messages served in 11749 frames, 0 frames dropped by the kernel
+so far: 10904 requests, 300978 messages served in 16228 frames, 0 frames dropped by the kernel
+so far: 14410 requests, 386138 messages served in 21138 frames, 0 frames dropped by the kernel
+so far: 17595 requests, 456949 messages served in 25499 frames, 0 frames dropped by the kernel
+so far: 20864 requests, 539798 messages served in 30150 frames, 0 frames dropped by the kernel
+so far: 24321 requests, 628853 messages served in 35069 frames, 0 frames dropped by the kernel
+so far: 27859 requests, 743459 messages served in 40876 frames, 0 frames dropped by the kernel
+so far: 31207 requests, 829725 messages served in 45700 frames, 0 frames dropped by the kernel
+so far: 34416 requests, 908669 messages served in 50305 frames, 0 frames dropped by the kernel
+so far: 38047 requests, 985672 messages served in 55156 frames, 0 frames dropped by the kernel
+so far: 41415 requests, 1071655 messages served in 59974 frames, 0 frames dropped by the kernel
+so far: 44813 requests, 1149777 messages served in 64654 frames, 0 frames dropped by the kernel
+so far: 48174 requests, 1221578 messages served in 69157 frames, 0 frames dropped by the kernel
+so far: 51639 requests, 1305080 messages served in 74035 frames, 0 frames dropped by the kernel
+so far: 54989 requests, 1385340 messages served in 78722 frames, 0 frames dropped by the kernel
+so far: 58282 requests, 1468088 messages served in 83411 frames, 0 frames dropped by the kernel
+so far: 61705 requests, 1544414 messages served in 88101 frames, 0 frames dropped by the kernel
+so far: 65163 requests, 1623695 messages served in 92856 frames, 0 frames dropped by the kernel
+so far: 68613 requests, 1708950 messages served in 97642 frames, 0 frames dropped by the kernel
+so far: 71975 requests, 1790311 messages served in 102326 frames, 0 frames dropped by the kernel
+so far: 75402 requests, 1882655 messages served in 107299 frames, 0 frames dropped by the kernel
+so far: 78591 requests, 1962610 messages served in 111862 frames, 0 frames dropped by the kernel
+so far: 81937 requests, 2043368 messages served in 116533 frames, 0 frames dropped by the kernel
+so far: 83232 requests, 2073385 messages served in 118324 frames, 0 frames dropped by the kernel
+so far: 83232 requests, 2073385 messages served in 118324 frames, 0 frames dropped by the kernel
+so far: 83232 requests, 2073385 messages served in 118324 frames, 0 frames dropped by the kernel
+so far: 83233 requests, 2073387 messages served in 118325 frames, 0 frames dropped by the kernel
+so far: 83233 requests, 2073387 messages served in 118325 frames, 0 frames dropped by the kernel
+so far: 83233 requests, 2073387 messages served in 118325 frames, 0 frames dropped by the kernel
 Stopping itch-mold.service - [systemd-run] /usr/bin/python3 /home/misa/projects/fpga-itch-feed-handler/scripts/mold_server.py serve eno1 /home/misa/projects/fpga-itch-feed-handler/build/tracked.pcap...
+total: 83233 requests, 2073387 messages served in 118325 frames, 0 frames dropped by the kernel
 itch-mold.service: Deactivated successfully.
 Stopped itch-mold.service - [systemd-run] /usr/bin/python3 /home/misa/projects/fpga-itch-feed-handler/scripts/mold_server.py serve eno1 /home/misa/projects/fpga-itch-feed-handler/build/tracked.pcap.
-itch-mold.service: Consumed 6.049s CPU time over 35.434s wall clock time, 265.8M memory peak.
+itch-mold.service: Consumed 6.901s CPU time over 38.550s wall clock time, 265.8M memory peak.
