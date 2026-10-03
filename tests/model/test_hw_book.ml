@@ -4,7 +4,14 @@ open Itch_model
 (* Tiny tables and a 2-entry cache, so that the rare paths of the hardware
    architecture (cuckoo displacement, cache refills from the level table,
    cache insertions below a full cache) happen all the time. *)
-let tiny = { Hw_book.default_params with order_bucket_bits = 2; level_bucket_bits = 3; cache_k = 2 }
+let tiny =
+  { Hw_book.default_params with
+    order_bucket_bits = 2
+  ; level_bucket_bits = 3
+  ; cache_k = 2
+  ; level_window_shift = 0
+  }
+;;
 
 let%expect_test "property: the hardware architecture model equals the reference book" =
   let totals = Hw_book.create ~p:tiny [ "QQQ" ] |> Hw_book.stats in

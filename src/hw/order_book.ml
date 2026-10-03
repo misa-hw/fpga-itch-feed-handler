@@ -222,7 +222,16 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
   let omasks = Array.init 2 ~f:(fun bank -> Params.h3_masks ~key_bits:ref_bits ~out_bits:ob ~bank) in
   let lmasks =
     Array.init 2 ~f:(fun bank ->
-      Params.h3_masks ~key_bits:Params.level_key_bits ~out_bits:lb ~bank:(bank + 2))
+      Params.h3_masks ~key_bits:Params.level_key_bits ~out_bits:(Params.level_window_bits p) ~bank:(bank + 2))
+  in
+  (* a book side's levels live in its window of the level table
+     (Params.level_window_start): the row is the window's start plus the
+     hash, which only adds [bs] to the row's top four bits *)
+  let lwb = Params.level_window_bits p in
+  let level_row ~bs h =
+    if p.level_window_shift = 0
+    then h
+    else uresize h ~width:lb +: (if lb = 4 then bs else bs @: zero (lb - 4))
   in
   let open Always in
   (* registers are named so that timing reports say which one is slow *)
@@ -349,7 +358,7 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
   let lrows = Array.init 2 ~f:(fun b -> split_row (lrow b) ~ways ~entry_width:Le.width |> List.map ~f:Le.unpack) in
   let obucket b key = h3 omasks.(b) key in
   let lkey = bs.value @: a_price.value in
-  let lbucket b = h3 lmasks.(b) lkey in
+  let lbucket b = level_row ~bs:bs.value (h3 lmasks.(b) lkey) in
   (* free ways in a row, and the insert choice: bank with more free ways (bank 0 on a tie), lowest free way *)
   let free_vec entries = concat_lsb (List.map entries ~f:(fun (e : Oe.t) -> ~:(e.valid))) in
   let lfree_vec entries = concat_lsb (List.map entries ~f:(fun (e : Le.t) -> ~:(e.valid))) in
@@ -441,7 +450,7 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
     concat_msb [ bp; bsh; ap; ash ]
   in
   (* ---- refill scan ---- *)
-  let scan_idx = var_reg ~w:(lb + 1) () in
+  let scan_idx = var_reg ~w:(lwb + 1) () (* rows of the window scanned so far *) in
   let sorter_v = Array.init k ~f:(fun j -> var_reg ~name:(sprintf "ob_sorter_v_%d" j) ()) in
   let sorter_k = Array.init k ~f:(fun j -> var_reg ~name:(sprintf "ob_sorter_k_%d" j) ~w:32 ()) in
   let sorter_p = Array.init k ~f:(fun j -> var_reg ~name:(sprintf "ob_sorter_p_%d" j) ~w:price_bits ()) in
@@ -539,6 +548,15 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
       tournament (List.map (pairs nodes) ~f:reg_node) (reg spec valid)
   in
   let ((n_v, n_k, n_p, n_s), (sec_v, sec_k)), n_valid = tournament (List.map stage_a ~f:leaf) scan_valid_a in
+  (* A waiting command may abandon another side's unfinished scan (see
+     [Wait_refill]): rows of that scan still in this pipeline are dropped.
+     Each scan has a generation bit, carried alongside its rows. *)
+  let generation = var_reg ~name:"ob_scan_gen" () in
+  let row_generation =
+    List.init (3 + Int.ceil_log2 (2 * ways)) ~f:Fn.id
+    |> List.fold ~init:generation.value ~f:(fun g _ -> reg spec g)
+  in
+  let n_valid = n_valid &: (row_generation ==: generation.value) in
   let sec_v = sec_v &: n_valid in
   (* The winner reaches the sorter one cycle after the tournament, and its
      comparisons with the sorter's entries are made during that cycle,
@@ -619,6 +637,7 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
   let evicted_v, evicted_k = vmax (ev_v.value, ev_k.value) (pe_v.value, pe_k.value) in
   let start_scan b =
     [ rbs <-- b
+    ; generation <-- ~:(generation.value)
     ; scan_active <-- vdd
     ; scan_done <-- gnd
     ; scan_idx <--. 0
@@ -642,7 +661,7 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
   let popping = sm.is Idle &: ~:(scan_done.value) &: ~:(fifo.empty) in
   let scan_ok = (sm.is Idle &: ~:popping) |: sm.is Finish |: sm.is Emit |: sm.is Wait_refill in
   let issuing = scan_active.value &: ~:(scan_done.value) &: (msb scan_idx.value ==:. 0) &: scan_ok in
-  let scan_addr = sel_bottom scan_idx.value ~width:lb in
+  let scan_addr = level_row ~bs:rbs.value (sel_bottom scan_idx.value ~width:lwb) in
   compile
     [ when_
         issuing
@@ -1044,7 +1063,14 @@ let create ?(p = Params.default_params) ?(fifo_capacity = 512) scope (i : _ I.t)
             ; if_
                 scan_done.value
                 [ sm.set_next Merge_rd ]
-                [ when_ ~:(scan_active.value) (start_scan w_bs.value) ]
+                [ (* no scan, or another side's still running: start this
+                     side's now. Waiting for the other one to finish first
+                     made the worst case two scans long. Nothing changes the
+                     table meanwhile: the book is stalled. *)
+                  when_
+                    (~:(scan_active.value) |: (rbs.value <>: w_bs.value))
+                    (start_scan w_bs.value)
+                ]
             ] )
         ; ( Merge_rd
           , (let v, key = vmax (disc_v.value, disc_k.value) (ev_v.value, ev_k.value) in

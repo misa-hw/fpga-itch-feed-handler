@@ -149,9 +149,14 @@ let hwmodel =
        flag "-order-bucket-bits" (optional_with_default Hw_book.default_params.order_bucket_bits int) ~doc:"N"
      and level_bucket_bits =
        flag "-level-bucket-bits" (optional_with_default Hw_book.default_params.level_bucket_bits int) ~doc:"N"
-     and cache_k = flag "-cache-k" (optional_with_default Hw_book.default_params.cache_k int) ~doc:"N" in
+     and cache_k = flag "-cache-k" (optional_with_default Hw_book.default_params.cache_k int) ~doc:"N"
+     and level_window_shift =
+       flag
+         "-level-window-shift"
+         (optional_with_default Hw_book.default_params.level_window_shift int)
+         ~doc:"N each book side's levels in 1/2^N of the level table" in
      fun () ->
-       let p = { Hw_book.default_params with order_bucket_bits; level_bucket_bits; cache_k } in
+       let p = { Hw_book.default_params with order_bucket_bits; level_bucket_bits; cache_k; level_window_shift } in
        let book = Book.create symbols and hw = Hw_book.create ~p symbols in
        let events = ref 0 and mismatches = ref 0 in
        let n =

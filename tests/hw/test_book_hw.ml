@@ -110,9 +110,19 @@ let%expect_test "waveform: add a bid, then a better one, then delete it" =
    that do not depend on timing must be equal too (refill counts do: the
    hardware starts a refill at the same point, but a scan in progress defers
    the next one). *)
-let tiny = { Hw_book.default_params with order_bucket_bits = 2; level_bucket_bits = 3; cache_k = 2 }
+let tiny =
+  { Hw_book.default_params with
+    order_bucket_bits = 2
+  ; level_bucket_bits = 3
+  ; cache_k = 2
+  ; level_window_shift = 0
+  }
+;;
 
-let%expect_test "property: RTL == architecture model (tiny tables), incl. internal counters" =
+(* the same with level windows: 16 rows, each book side in 8 of them *)
+let tiny_windows = { tiny with level_bucket_bits = 4; level_window_shift = 1 }
+
+let property tiny =
   let refills = ref 0 and stalls = ref 0 and kicks_total = ref 0 in
   Quickcheck.test
     ~trials:100
@@ -152,7 +162,16 @@ let%expect_test "property: RTL == architecture model (tiny tables), incl. intern
     "kicks exercised: %b, background refills exercised: %b, waits for a refill exercised: %b\n"
     (!kicks_total > 0)
     (!refills > 0)
-    (!stalls > 0);
+    (!stalls > 0)
+;;
+
+let%expect_test "property: RTL == architecture model (tiny tables), incl. internal counters" =
+  property tiny;
+  [%expect {| kicks exercised: true, background refills exercised: true, waits for a refill exercised: true |}]
+;;
+
+let%expect_test "property: the same with level windows" =
+  property tiny_windows;
   [%expect {| kicks exercised: true, background refills exercised: true, waits for a refill exercised: true |}]
 ;;
 

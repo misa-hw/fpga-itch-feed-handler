@@ -43,18 +43,28 @@ type params =
   ; ways : int
   ; cache_k : int
   ; max_kicks : int
+  ; level_window_shift : int
+    (* each book side's levels live in a window of 1/2^shift of the level
+       table's rows (0: anywhere), so a refill scans only that window *)
   }
 [@@deriving sexp]
 
 let default_params =
-  { order_bucket_bits = 12; level_bucket_bits = 11; ways = 4; cache_k = 8; max_kicks = 32 }
+  { order_bucket_bits = 12
+  ; level_bucket_bits = 11
+  ; ways = 4
+  ; cache_k = 8
+  ; max_kicks = 32
+  ; level_window_shift = 1
+  }
 ;;
 
 (* A refill starts when a book side's cache holds at most this many levels
    (half of it) while more exist. The hardware scans in the background from
    then on, so the book only stalls if the cache empties before the scan
    finishes. Measured on the full replay: starting at 4 of 8 instead of 2 of 8
-   cuts the cycles commands wait for a refill from 36,411 to 10,756. *)
+   cut the cycles commands wait for a refill from 36,411 to 10,756 (before
+   level windows and scan pre-emption, which bring it to 6,413). *)
 let refill_low_water (p : params) = Int.max 1 (p.cache_k / 2)
 let banks = 2
 let book_sides = 16
@@ -85,6 +95,23 @@ let h3 masks key =
 (* level key: book side (4 bits) above the 32-bit price *)
 let level_key ~bs ~price = (bs lsl 32) lor price
 let level_key_bits = 36
+
+(* Level windows. Book side [bs]'s window starts [bs] sixteenths of the table
+   in: windows of a quarter of the table overlap, each row in the windows of
+   four book sides, and a side may hold up to a quarter of the table's
+   entries (shared with its neighbours). Row = window start + an H3 hash of
+   the window's width. *)
+let level_window_bits (p : params) = p.level_bucket_bits - p.level_window_shift
+
+let level_window_start (p : params) ~bs =
+  if p.level_window_shift = 0
+  then 0
+  else (
+    if p.level_bucket_bits < 4 then raise_s [%message "level windows need at least 16 rows" (p : params)];
+    bs lsl (p.level_bucket_bits - 4))
+;;
+
+let level_row (p : params) ~bs h = (level_window_start p ~bs + h) land ((1 lsl p.level_bucket_bits) - 1)
 
 (* ---- state ---- *)
 
@@ -144,7 +171,9 @@ let create ?(p = default_params) symbols =
   ; orders = table p.order_bucket_bits
   ; levels = table p.level_bucket_bits
   ; omasks = Array.init banks ~f:(fun bank -> h3_masks ~key_bits:order_ref_bits ~out_bits:p.order_bucket_bits ~bank)
-  ; lmasks = Array.init banks ~f:(fun bank -> h3_masks ~key_bits:level_key_bits ~out_bits:p.level_bucket_bits ~bank:(bank + 2))
+  ; lmasks =
+      Array.init banks ~f:(fun bank ->
+        h3_masks ~key_bits:level_key_bits ~out_bits:(level_window_bits p) ~bank:(bank + 2))
   ; cache = Array.create ~len:book_sides []
   ; nlevels = Array.create ~len:book_sides 0
   ; stats =
@@ -177,8 +206,8 @@ let decode_ptr t ptr =
 ;;
 
 (* Find [pred] in the two candidate buckets; else the insert position. *)
-let locate_in (tbl : 'a option array array array) masks key ~pred =
-  let b0 = h3 masks.(0) key and b1 = h3 masks.(1) key in
+let locate_in ?(row = Fn.id) (tbl : 'a option array array array) masks key ~pred =
+  let b0 = row (h3 masks.(0) key) and b1 = row (h3 masks.(1) key) in
   let bucket bank = tbl.(bank).(if bank = 0 then b0 else b1) in
   let find bank =
     Array.find_mapi (bucket bank) ~f:(fun way e ->
@@ -339,7 +368,9 @@ let add t ~bs ~oref ~price ~shares =
     | (`Full | `Free _) as slot ->
       let key = level_key ~bs ~price in
       let ptr =
-        match locate_in t.levels t.lmasks key ~pred:(fun l -> l.bs = bs && l.price = price) with
+        match
+          locate_in ~row:(level_row t.p ~bs) t.levels t.lmasks key ~pred:(fun l -> l.bs = bs && l.price = price)
+        with
         | `Hit (bank, bucket, way, l) ->
           l.lshares <- l.lshares + shares;
           cache_level_changed t ~bs ~price ~shares:l.lshares;

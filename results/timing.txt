@@ -107,3 +107,11 @@ enables behind the message decision); with the late counters:
   endpoints within 0.1 / 0.2 / 0.5 / 1.0 ns of setup: 18 / 62 / 546 / 3,093
   GMII inputs +0.444 / +0.450 ns, outputs +1.654 / +3.688 ns (setup / hold)
   Utilization: 20,168 LUTs (31.8%), 117.5 BRAM tiles (87.0%)
+
+Level windows and scan pre-emption (2026-10-03): a refill scans half the
+level table (its side's window), and a waiting command abandons another
+side's unfinished scan.
+  WNS +0.009 ns, WHS +0.013 ns, 0 failing endpoints: MET
+  endpoints within 0.1 / 0.2 / 0.5 / 1.0 ns of setup: 11 / 55 / 481 / 3,076
+  GMII inputs +0.444 / +0.450 ns, outputs +1.654 / +3.688 ns (setup / hold)
+  Utilization: 20,649 LUTs (32.6%), 117.5 BRAM tiles (87.0%)

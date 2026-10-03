@@ -129,10 +129,10 @@ MoldUDP64 packets (`build/tracked.pcap`).
 | Measured | Result |
 | --- | --- |
 | Full replay, simulation ([`verify_tracked.txt`](results/verify_tracked.txt)) | 1,740,696 book commands, 1,043,727 changes, 0 mismatches, 0 overflows |
-| Event latency, 125 MHz cycles | p50 20, p99 31, p99.9 41, max 2,761; 118 commands (0.0068%) over 64 |
+| Event latency, 125 MHz cycles | p50 20, p99 31, p99.9 41, max 1,059 (2,761 before level windows and scan pre-emption); 72 commands (0.0041%) over 64 |
 | Peak table occupancy | 27,573 / 32,768 orders; 7,633 / 16,384 levels |
 | Book FIFO peak | 25 / 512 commands |
-| Background cache refills | 4,903; commands waited 10,902 cycles in total |
+| Background cache refills | 5,322; commands waited 6,413 cycles in total |
 | Core at 125 MHz, Vivado ([`timing.txt`](results/timing.txt)) | met, WNS +0.095 ns; 14,543 LUTs (23%), 8,983 FFs (7%), 98 BRAM tiles (73%) |
 | 1 Gb/s board image (order entry, gap recovery), Vivado | met, WNS +0.044 ns, WHS +0.025 ns; 20,941 LUTs (33%), 117.5 BRAM tiles (87%); GMII inputs +0.44 / +0.45 ns, outputs +1.65 / +3.69 ns setup / hold |
 | 1 Gb/s board, whole dataset over a cable | 1,043,727 changes, count and hash equal to the reference |

@@ -161,12 +161,30 @@ change to the design.
     already running then, its result can be empty too (it may have
     discarded the levels that are now best), so the command starts a fresh
     scan.
-  - On the full replay: 4,903 refills, 10,902 cycles in total that commands
-    spent waiting, p99 latency 31 cycles (was 672), p99.9 41 (was 2,078),
-    maximum 2,761 (was 6,016). Starting at 2 of 8 instead of 4 waited
-    36,411 cycles. The architectural model starts refills at the same point
-    but completes them at once; the property tests check that the RTL equals
-    it event by event with 0, 3 and 11 idle cycles between commands.
+  - **Level windows.** A scan reads only its side's window: half the level
+    table's rows, starting 1/16 of the table further for each book side, so
+    each row is in the windows of eight sides and a side can still hold up
+    to half the table. Each scan is half as long (about 1,030 cycles).
+    Quarter windows would halve it again, but on the full dataset the
+    architectural model then overflows 10 levels: a level never moves once
+    placed, and a busy side's crowded window runs out of room (QQQ's bids
+    peak at 1,672 levels, IWM's sides at 132). Half windows overflow none.
+  - **Pre-emption.** A waiting command whose side's scan has not started
+    abandons another side's unfinished scan and starts its own; the other
+    side refills later. Rows of the abandoned scan still in the pipeline
+    carry the old generation bit and are dropped. Waiting for the other
+    scan first made the worst case two scans long. Nothing changes the
+    table during the new scan, since the book is stalled.
+  - On the full replay: 5,322 refills, 6,413 cycles in total that commands
+    spent waiting (10,902 with whole-table scans, and no pre-emption), p99
+    latency 31 cycles (was 672 with blocking refills), p99.9 41 (was
+    2,078), maximum 1,059 (2,761 with whole-table scans, 2,007 with windows
+    alone; 6,016 blocking), 5 commands over 1,000 cycles (64). Starting at
+    2 of 8 instead of 4 waited 36,411 cycles (whole-table scans). The
+    architectural model starts refills at the same point but completes them
+    at once; the property tests check that the RTL equals it event by
+    event with 0, 3 and 11 idle cycles between commands, with and without
+    level windows.
 
 ## 6. Verification strategy
 
