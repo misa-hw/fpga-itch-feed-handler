@@ -122,3 +122,12 @@ Image with the tick-to-trade cuts (commit 14a0d47):
   leaving the host p50 0.049 ms, p99.9 9.855, max 18.308 (143 over 8 ms,
   all within the 32 ms budget). Tick-to-trade p50 9 cycles, max 16 (an
   order waited for a re-request already on the wire).
+
+Image with level windows and scan pre-emption (commit 75296eb):
+
+11. 60,000 frames/s: PASS
+  S1 frm=0031d7d9 acc=0031d7d4 flt=00000005 err=00000000 fcs=00000000 msg=001abf72 gap=00007f26 dup=001a0827 rpl=0001b28e rqs=000053ac mlost=00000000 bovf=00000000 bpk=005c stl=0 cmd=001a8f98 chg=000fed0f hash=186f6e17 lost=000fbed5 kick=0003b6f1 rfl=000015f3 ovf=00000000 ord=00006a14 lvl=00001d0a map=ff blen=00000000 dord=001a8f98 fcmd=001a8f98 fmax=00000004 uns=00000000 bst=01 bfe=1 clk=fc6b7d9d lat=001a8f98 l50=0014 l99=001f l999=0028 lmax=00000423 osent=00000035 ofast=00000035 odrop=00000000 tt=00000035 t50=0009 t99=0009 tmax=00000009
+  all 1,752,946 messages, hash 186f6e17, 53 of 53 orders at 9 cycles;
+  book latency on chip: p50 20, p99 31, p99.9 40 cycles, max 1,059 (the
+  Verilator replay's maximum exactly; 2,038 on the previous image's run 9:
+  lmax=0x7f6), 5,619 refills

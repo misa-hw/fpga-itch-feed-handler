@@ -34,7 +34,9 @@ trade-offs.
 - **Book latency: 160 ns median, 248 ns at p99** (20 and 31 cycles), from a
   message's last byte to its top-of-book event, measured on chip for each
   of the 1.74 million book commands, and equal to the cycle-exact
-  simulation.
+  simulation. The worst case, a command whose side's cache emptied before
+  its refill finished, is 1,059 cycles (8.5 us), on chip and in
+  simulation alike.
 - **Timing closes at 125 MHz** in Vivado, for the core and for the gigabit
   board image, whose GMII inputs are constrained to the PHY datasheet's
   3 ns window.
