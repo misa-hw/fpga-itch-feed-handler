@@ -1,8 +1,8 @@
 File Cache is enabled
-Test start: 1970-01-01 16:39:04.264491977 ...
-Test complete: 1970-01-01 16:39:27.433680657
-Actual: 3245088 packets (305422151 bytes) sent in 23.16 seconds
-Rated: 13182255.2 Bps, 105.45 Mbps, 140060.49 pps
+Test start: 1970-01-02 02:23:35.098726451 ...
+Test complete: 1970-01-02 02:23:58.550141204
+Actual: 3245088 packets (305422151 bytes) sent in 23.45 seconds
+Rated: 13023613.4 Bps, 104.18 Mbps, 138374.93 pps
 Flows: 2 flows, 0.08 fps, 3245088 unique flow packets, 0 unique non-flow packets
 Statistics for network device: eno1
 	Successful packets:        3245088

@@ -84,3 +84,22 @@ end with the reference book's changes and orders over the whole session.
   one timeout also switches on the "server silent" give-up, which then
   turned full-buffer events into give-ups in run 5. Next image: 32
   requests over 32 ms.
+
+Image with a 32-request (32 ms) budget (commit a27e2c1):
+
+7. 60,000 frames/s: PASS
+  S1 frm=0031d7e1 acc=0031d73f flt=000000a2 err=00000000 fcs=00000000 msg=001abf72 gap=00007f26 dup=001a0770 rpl=0001b391 rqs=00005319 mlost=00000000 bovf=00000000 bpk=005b stl=0 cmd=001a8f98 chg=000fed0f hash=186f6e17 lost=000fbed5 kick=0003b6f1 rfl=000013e6 ovf=00000000 ord=00006a14 lvl=00001d0a map=ff blen=00000000 dord=001a8f98 fcmd=001a8f98 fmax=00000002 uns=00000000 bst=01 bfe=1 clk=03a4051f lat=001a8f98 l50=0014 l99=001f l999=0028 lmax=000007fd osent=00000035 ofast=00000035 odrop=00000000 tt=00000035 t50=000e t99=000e tmax=0000000e
+  all 1,752,946 messages, hash 186f6e17, 53 of 53 orders, none given up;
+  21,273 requests; answers: 21,276 frames sent, 21,276 left the host,
+  21,276 received by the board; request to answer leaving the host p50
+  0.064 ms, p99 0.116, max 2.106
+
+8. Top speed, 138,375 frames/s: PASS
+  S1 frm=003336fc acc=003336ab flt=00000051 err=00000000 fcs=00000000 msg=001abf72 gap=00018de4 dup=0036c23b rpl=0006d3d3 rqs=00013b0d mlost=00000000 bovf=0000069e bpk=0493 stl=0 cmd=001a8f98 chg=000fed0f hash=186f6e17 lost=000fd8ca kick=0003b6f1 rfl=0000137e ovf=00000000 ord=00006a14 lvl=00001d0a map=ff blen=00000000 dord=001a8f98 fcmd=001a8f98 fmax=00000008 uns=00000000 bst=01 bfe=1 clk=1571d636 lat=001a8f98 l50=0014 l99=001f l999=0029 lmax=00000941 osent=00000035 ofast=00000035 odrop=00000000 tt=00000035 t50=000e t99=000e tmax=0000000e
+  all 1,752,946 messages, hash 186f6e17, 53 of 53 orders, none given up;
+  101,860 gaps, 80,653 requests, 447,443 messages replayed, 1,694 turned
+  away by the full buffer (peak 1,171 parked) and recovered later
+  answers: 112,183 frames sent, 112,183 left the host, 111,240 received by
+  the board (943 lost after the host's tap, recovered by retries)
+  request to answer leaving the host: p50 0.047 ms, p99 1.609, p99.9 5.305,
+  max 9.373; 9 over 8 ms, all within the 32 ms budget

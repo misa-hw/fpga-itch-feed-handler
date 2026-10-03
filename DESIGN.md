@@ -618,17 +618,23 @@ on the transmit pins: the change count, hash and orders equal the model's
 over every message.
 
 **On the board** (`results/board_recovery.txt`): the whole session on two
-lines, each losing about 2% of packets and 643 packets lost on both, at
-60,000 frames/s, with `scripts/mold_server.py` answering re-requests. The
-board passed on all 1,752,946 messages in sequence (18,944 requests,
-121,031 messages replayed, none given up) and ended with the same changes,
-hash and 53 orders as a run with no losses. At the host's top speed
-(126,000 frames/s, where the PC's own drops and reorders add some 70,000
-more gaps) the 16 KB buffer of that image ran out of bytes while requests
-waited, and 132 messages were given up and flagged: the reason the buffer
-is now 32 KB, and that a full buffer gives up a hole at once when the
-server has stopped answering. With those, at 137,000 frames/s: 96 given
-up, 34 messages turned away by the buffer (peak 1,166 parked), and every
-one of the 81,102 requests reached the server and was answered. The
-answers leave through the host's transmit path, which drops frames at that
-rate (section 10): the likely limit, still to be confirmed.
+lines, each losing about 2% of packets and 643 packets lost on both, with
+`scripts/mold_server.py` answering re-requests from the host. At 60,000
+frames/s the board passed on all 1,752,946 messages in sequence (about
+21,000 requests, none given up) and ended with the same changes, hash and
+53 orders as a run with no losses. At the host's top speed, 138,000
+frames/s, the host's own drops and reorders raise the gaps to about
+100,000 and the requests to 80,000, and it passes too: 447,443 messages
+replayed, 1,694 turned away by the full buffer and recovered later, and
+943 answer frames lost on the way and asked for again.
+
+Getting there took three changes, each found from the board's counters.
+The 16 KB buffer ran out of bytes (peak 586 messages): now 32 KB. With a
+crashed server, every hole waited out its retries while the full buffer
+turned the feed away: a full buffer now gives up the open hole at once
+once a hole has gone unanswered. And the host's server, sharing the CPU
+with the replay, stalls for up to 13.5 ms (measured from the capture of
+each request and its answer at the host's transmit tap), longer than the
+8 requests over 8 ms the board first allowed: the same feed gave up 96,
+1,718 and 0 messages in three runs. With 32 requests over 32 ms, both
+rates pass.
