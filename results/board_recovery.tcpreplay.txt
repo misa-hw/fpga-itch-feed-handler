@@ -1,9 +1,29 @@
 File Cache is enabled
-Test start: 1970-01-02 03:47:08.670201748 ...
-Test complete: 1970-01-02 03:47:33.556884109
-Actual: 3245088 packets (305422151 bytes) sent in 24.88 seconds
-Rated: 12272513.9 Bps, 98.18 Mbps, 130394.56 pps
-Flows: 2 flows, 0.08 fps, 3245088 unique flow packets, 0 unique non-flow packets
+Test start: 1970-01-02 08:02:57.780868626 ...
+Actual: 300003 packets (27980754 bytes) sent in 5.00 seconds
+Rated: 5596097.0 Bps, 44.76 Mbps, 60000.02 pps
+Actual: 600004 packets (55817031 bytes) sent in 10.00 seconds
+Rated: 5581674.6 Bps, 44.65 Mbps, 60000.09 pps
+Actual: 900005 packets (83688964 bytes) sent in 15.00 seconds
+Rated: 5579239.3 Bps, 44.63 Mbps, 60000.06 pps
+Actual: 1200005 packets (113458113 bytes) sent in 20.00 seconds
+Rated: 5672886.0 Bps, 45.38 Mbps, 60000.04 pps
+Actual: 1500006 packets (141668135 bytes) sent in 25.00 seconds
+Rated: 5666706.5 Bps, 45.33 Mbps, 60000.04 pps
+Actual: 1800006 packets (169849613 bytes) sent in 30.00 seconds
+Rated: 5661637.9 Bps, 45.29 Mbps, 60000.03 pps
+Actual: 2100007 packets (198071289 bytes) sent in 35.00 seconds
+Rated: 5659163.5 Bps, 45.27 Mbps, 60000.02 pps
+Actual: 2400008 packets (226199594 bytes) sent in 40.00 seconds
+Rated: 5654973.3 Bps, 45.23 Mbps, 60000.02 pps
+Actual: 2700009 packets (254363153 bytes) sent in 45.00 seconds
+Rated: 5652497.8 Bps, 45.21 Mbps, 60000.02 pps
+Actual: 3000009 packets (282473263 bytes) sent in 50.00 seconds
+Rated: 5649450.1 Bps, 45.19 Mbps, 60000.01 pps
+Test complete: 1970-01-02 08:03:51.865652899
+Actual: 3245088 packets (305422151 bytes) sent in 54.08 seconds
+Rated: 5647099.3 Bps, 45.17 Mbps, 60000.01 pps
+Flows: 2 flows, 0.03 fps, 3245088 unique flow packets, 0 unique non-flow packets
 Statistics for network device: eno1
 	Successful packets:        3245088
 	Failed packets:            0
