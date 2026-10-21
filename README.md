@@ -288,8 +288,17 @@ has the details.
 
 Developed with OCaml 5.2+Ox, dune 3.24, Hardcaml
 `v0.18~preview.130.106+341`, Verilator 5.032, Vivado 2026.1, and openXC7
-(Yosys 0.52 and nextpnr-xilinx; its scripts expect `/opt/openxc7` and a chip
-database at `~/hardcaml-tutorial/fpga/build/xc7a100tfgg676.bin`).
+(Yosys 0.52 and nextpnr-xilinx).
+
+The scripts look for their tools in default places, each of which an
+environment variable overrides:
+
+| Variable | Default |
+| --- | --- |
+| `OPENXC7` | `/opt/openxc7` |
+| `TUTORIAL_CHIPDB` | `~/hardcaml-tutorial/fpga/build/xc7a100tfgg676.bin` |
+| `VIVADO` | the first `Vivado/bin/vivado` under `~/Xilinx` |
+| `UNISIMS` | the first `data/verilog/src/unisims` under `~/Xilinx` |
 
 ```bash
 eval "$(opam env --switch=oxcaml)"
@@ -397,3 +406,10 @@ openFPGALoader-xpcu -c xilinxPlatformCableUsb fpga/build/board_top_50_selftest.b
   rows) and still failed at speed on the board
   ([`board_toolchains.txt`](results/board_toolchains.txt)).
 - **Data:** the sample prefix is not a complete trading day.
+
+## What's next
+
+My next project will be built without any AI help at all: a network
+parser on the same board, most likely a small Ethernet/IP/UDP stack. After
+seeing what an agent can do here, I want something I've written line by
+line myself.

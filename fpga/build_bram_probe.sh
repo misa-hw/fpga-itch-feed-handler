@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 eval "$(opam env --switch=oxcaml)"
-source /opt/openxc7/export.sh
+source "${OPENXC7:-/opt/openxc7}/export.sh"
 b=fpga/build
 stem=$b/bram_probe${SUFFIX:-}
 dune build ./bin/gen_verilog.exe

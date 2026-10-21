@@ -9,7 +9,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 B=fpga/build
 mkdir -p $B
 eval "$(opam env --switch=oxcaml 2>/dev/null)" || true
-source /opt/openxc7/export.sh
+source "${OPENXC7:-/opt/openxc7}/export.sh"
 dune build ./bin/gen_verilog.exe
 ./_build/default/bin/gen_verilog.exe timing_top $B/timing_top.v
 yosys -q -l $B/timing_top.yosys.log -p "read_verilog $B/timing_top.v; setattr -set fsm_encoding \"none\" w:*; synth_xilinx -flatten -abc9 -arch xc7 -top timing_top; stat; write_json $B/timing_top.json"

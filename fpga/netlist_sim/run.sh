@@ -16,7 +16,7 @@ pcap=${PCAP:-build/board_subset.pcap}
 d=fpga/build/netlist_sim_$mode
 mkdir -p $d
 eval "$(opam env --switch=oxcaml 2>/dev/null)" || true
-source /opt/openxc7/export.sh
+source "${OPENXC7:-/opt/openxc7}/export.sh"
 dune build ./bin/gen_verilog.exe ./bin/pcapgen.exe
 if [[ $mode == rtl ]]; then
   # no synthesis: simulate the Hardcaml Verilog that yosys reads

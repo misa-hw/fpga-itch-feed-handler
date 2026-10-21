@@ -6,7 +6,7 @@ set -euo pipefail
 # flow, even with a power-on reset (found with src/hw/bram_probe.ml).
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 eval "$(opam env --switch=oxcaml)"
-source /opt/openxc7/export.sh
+source "${OPENXC7:-/opt/openxc7}/export.sh"
 b=fpga/build
 target_mhz="${TARGET_MHZ:-125}"
 case "$target_mhz" in
