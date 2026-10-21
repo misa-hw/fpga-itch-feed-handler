@@ -1,9 +1,10 @@
 # Design notes
 
 How the design works and why it ended up this way, with the measurements
-behind each decision. Numbers are from the Nasdaq
-TotalView-ITCH 5.0 sample of 2019-07-30 (first 32.6M messages, 04:00 to 09:47 ET)
-and the eight default symbols QQQ, SPY, IWM, DIA, TQQQ, SQQQ, AMD, UVXY.
+behind each decision. Unless stated otherwise, numbers come from the Nasdaq
+TotalView-ITCH 5.0 sample of 2019-07-30 (the first 32.6M messages, 04:00 to
+09:47 ET) and the eight default symbols: QQQ, SPY, IWM, DIA, TQQQ, SQQQ, AMD
+and UVXY.
 
 ## 1. Why this pipeline shape
 
@@ -45,7 +46,8 @@ store-and-forward.
 
 ## 3. Sizing: what has to fit in the FPGA
 
-`itch_tool profile` and `itch_tool hwmodel` measured this before any RTL was written:
+`itch_tool profile` and `itch_tool hwmodel` measured this before any RTL was
+written:
 
 | | measured | capacity |
 |---|---|---|
@@ -393,8 +395,8 @@ separated the layers one at a time:
    simulated with two independent clocks and MII stimulus. yosys's
    `cells_sim.v` declares RAMB18E1/RAMB36E1 as timing shells with no memory
    behaviour, so they are replaced with Vivado's functional unisim models.
-   Without that, every BRAM read returns 0, which briefly looked like a
-   synthesis bug. A plain Verilog RAM run through the same flow is the
+   Without that, every BRAM read returns 0, which for a while looked
+   like a synthesis bug. A plain Verilog RAM run through the same flow is the
    control that exposed this. With functional models the netlist matched the
    model exactly, so logic synthesis was correct.
 2. **On-chip self-test** (`SELFTEST_PCAP=... fpga/build_board.sh`): the test
@@ -453,9 +455,9 @@ or frame errors), and the Verilator replay of the same pcap was exact.
   pcap's 715,926 frames of 83 and 87 bytes, the single-message frames that
   carry an Order Delete or an Order Cancel. That looked like a
   frame-length bug in the MAC, which the Verilator replay never exercises
-  (it starts after the MAC). A new test sent real frames through the GMII
-  MAC at the minimum inter-frame gap, an 8-byte gap and a 5-byte preamble:
-  no duplicates, no gaps (`tests/hw/test_gmii_stream.ml`).
+  (it starts after the MAC). A new test sends real frames
+  through the GMII MAC at the minimum inter-frame gap, an 8-byte gap and a
+  5-byte preamble: no duplicates, no gaps (`tests/hw/test_gmii_stream.ml`).
 - **A rate sweep.** The first 10,000 frames at 500 frames/s and the first
   100,000 at 20,000 and 60,000 frames/s gave no duplicates; at top speed (127,000 frames/s) they came
   back. So it depended on rate, not on the frames.
@@ -469,8 +471,9 @@ or frame errors), and the Verilator replay of the same pcap was exact.
   expected sequence number is a duplicate; above it, a gap) applied to the
   captured order reproduces the board's counters exactly, in every run: for
   example 44,115 duplicates and 2,711 gaps for 100,000 frames at top speed.
-  The board had received and processed exactly what was sent. The 83- and 87-byte frames were most of the
-  frames overtaken by the interleaved stream.
+  The board had received and processed exactly what was sent; the bug was
+  in the test setup, not in the hardware. The 83- and 87-byte frames were
+  simply most of the frames overtaken by the interleaved stream.
 
 The test (`scripts/board_linerate.sh`) now records what leaves the host,
 rebuilds those frames in order from the pcap by sequence number, and runs
@@ -668,7 +671,8 @@ frames/s, the host's own drops and reorders raise the gaps to about
 replayed, 1,694 turned away by the full buffer and recovered later, and
 943 answer frames lost on the way and asked for again.
 
-Getting there took three changes, each found from the board's counters.
+Getting there took three changes, and the board's own counters pointed to
+each one.
 The 16 KB buffer ran out of bytes (peak 586 messages): now 32 KB. With a
 crashed server, every hole waited out its retries while the full buffer
 turned the feed away: a full buffer now gives up the open hole at once
